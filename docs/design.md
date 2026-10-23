@@ -34,6 +34,10 @@ Keep the original input and cache the resized grayscale image. Never apply
 adjustments cumulatively to a previous result. Start with processing on the
 UI thread at this small output size; measure before introducing concurrency.
 Enforce input decoder limits and retain the current image if loading fails.
+The user has since observed stalls while loading images: task 008 will move
+expensive loading/preparation off the UI thread, without assuming every cached
+400×240 tone update needs background processing. This follow-up is not yet
+implemented.
 
 ## Dithering and controls
 
@@ -60,8 +64,19 @@ thresholds `(entry + 0.5)/16`. Inversion swaps output pixels after dithering.
 
 The GUI shows source and result with nearest-neighbor preview at integer zoom
 levels (1×, 2×, 3×). Export must match the current preview pixel-for-pixel.
-The CLI refuses to overwrite output without `--force`; the GUI confirms
-replacement. Never overwrite the source image accidentally.
+The CLI refuses to overwrite output without `--force`. The native KDE portal
+save dialog already confirms replacement; task 007 will remove the redundant
+in-app confirmation (currently both are shown). Never overwrite the source
+image accidentally: identity checks and atomic writes remain mandatory even
+after native approval.
+
+Task 009 will add GUI-only crop editing: a fixed 400:240 frame, drag-to-pan,
+slider/wheel crop zoom, and keyboard alternatives. Keep the selection inside
+the oriented original; existing Fit mode retains white margins. Extend Fill
+mode, starting at centered 1× crop, and distinguish crop zoom from preview
+magnification. CLI flags/defaults stay unchanged. Retain selection when toggling
+Fit/Fill; new images and reset restore centered 1×. These controls are planned,
+not implemented; use shared crop math and preserve preview/export agreement.
 
 ## BMP findings
 
@@ -141,5 +156,7 @@ cargo run --bin offimg -- convert input.jpg output.bmp
 cargo run --features gui --bin offimg-gui
 ```
 
-Defer saved presets, batch conversion, interactive crop dragging, automatic
-calculator copying, cross-platform releases, and Nix application packaging.
+Defer saved presets, batch conversion, automatic calculator copying,
+cross-platform releases, and Nix application packaging. Interactive cropping
+is now in scope for task 009, after native-only confirmation and responsive
+loading (007–008); follow this priority order before hardware validation 006.

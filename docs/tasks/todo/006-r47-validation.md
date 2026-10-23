@@ -26,3 +26,7 @@ Do not automatically mount, modify, or eject the calculator's filesystem.
 Not started. Requires the user and physical hardware; software-only testing is
 not a substitute. Preserve existing calculator files and safely eject after
 manual copying.
+
+The requested GUI follow-ups (007–009) take priority in the normal work order.
+This hardware check can still run independently when the user and calculator
+are available; it does not require interactive cropping or background loading.

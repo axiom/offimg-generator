@@ -22,7 +22,7 @@ the previous valid input after failed loads.
 - [x] Controls update the preview live without cumulative image degradation.
 - [x] Preview pixels and exported BMP pixels match in an automated check.
 - [x] Defaults/ranges match CLI settings; reset restores those defaults.
-- [ ] Existing output requires confirmation; source images stay protected.
+- [x] Existing output requires confirmation; source images stay protected.
 - [x] Decode/export errors are shown without crashing or losing the preview.
 - [x] CLI-only build still works without GUI dependencies enabled.
 - [x] Formatting, tests, and all-feature Clippy pass.
@@ -44,15 +44,20 @@ Verified `nix develop --command cargo test --all-features` (22 tests),
 `cargo test --no-default-features` (21 tests), `cargo fmt --check`, and
 `cargo clippy --all-targets --all-features -- -D warnings`. The no-default
 `cargo tree -e normal` contains no GUI dependencies. A cached debug-build
-tone/dither/texture update measured about 16 ms; no workers needed.
+tone/dither/texture update measured about 16 ms. This did not measure image
+loading; the user subsequently reported stalls while loading images (task 008).
 
 Launched from `nix develop` on KDE Wayland (`wayland-0`, X11 also available).
-The user confirmed the window, dialogs, and controls worked, but did not try
-replacing existing output. Source protection and failed-export preservation
-are automated-tested. In response to visual feedback, replaced the cramped
-toolbar controls with a spaced sidebar, larger action buttons, and preview
-cards; relaunched for a second look.
+The user confirmed the window, dialogs, and controls worked. Source protection
+and failed-export preservation are automated-tested. In response to visual
+feedback, replaced the cramped toolbar controls with a spaced sidebar, larger
+action buttons, and preview cards; the user confirmed the layout is much better.
 
-Next: ask the user to export twice to a disposable destination and verify
-Cancel/Replace. This is the only unchecked item. Then move this task to done
-and proceed to task 006; do not claim R47 hardware compatibility yet.
+The user then confirmed the overwrite dialog works, completing acceptance,
+but reported that the native file chooser already asks the same question.
+Task 007 removes the redundant in-app confirmation without weakening source
+protection. Task 008 addresses observed loading stalls; task 009 adds GUI-only
+drag/zoom crop selection. These follow-ups are planned, not implemented.
+
+Next: task 007 per the priority order in `docs/tasks/README.md`. Task 006 still
+requires physical hardware; no R47 compatibility claim has been made.
