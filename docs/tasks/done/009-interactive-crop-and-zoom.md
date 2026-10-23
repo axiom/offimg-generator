@@ -61,16 +61,15 @@ Do not add presets, rotation, free-aspect crop handles, or CLI crop controls.
       clamping, pan/zoom changes, Fit/Fill toggling, and reset/new-image behavior.
 - [x] Tests verify selected source pixels and preview/export agreement using
       an asymmetric pattern, with orientation applied before crop coordinates.
-- [ ] Loading/dragging stays responsive on a representative large image, with
+- [x] Loading/dragging stays responsive on a representative large image, with
       no stale results or unbounded request queues if preparation is asynchronous.
 - [x] Existing CLI output/defaults and Fit behavior are unchanged; `just check`
       passes, and controls/zoom semantics are documented.
 
 ## Progress / handoff
 
-Implemented. The user confirms cropping/zooming works and has also confirmed the
-updated slider-free UI. Remaining: explicit representative-large-image
-responsiveness confirmation before moving to `done/`.
+Complete. The user confirmed cropping/zooming, the updated slider-free UI, and
+responsiveness with a large image. All acceptance items are verified.
 
 - `src/pipeline.rs`: shared `Crop`/`CropBounds`, finite validation, 1×–16× zoom,
   clamped normalized centers, frame-to-source drag mapping, crop-before-resize.
@@ -106,7 +105,7 @@ Follow-up validation: `nix develop --command just check` passes again (32 tests,
 formatting and Clippy; two manual timing tests skipped). The user subsequently
 confirmed the updated slider-free UI. No code changed after those checks.
 
-Remaining desktop check: confirm loading/dragging responsiveness with a large real
-image, without freezes or stale updates. The UI confirmation did not explicitly
-identify the test image size. Record that result before moving to `done/`;
-do not claim hardware compatibility from desktop checks.
+Final desktop check: the user confirmed responsiveness with a large image after
+being asked specifically about this remaining check. Exact image dimensions were
+not recorded. No code changed after the passing checks above. Hardware
+compatibility remains unverified; next in normal work order is task 010.
