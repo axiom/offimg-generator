@@ -6,6 +6,9 @@ A small, Linux-only Rust utility for personal use. Convert images to 400×240,
 1-bit BMP OFF-images for the SwissMicros R47, which uses DM42n hardware with
 community firmware. Provide both a command-line converter and a simple desktop
 GUI with a live preview. Confirm compatibility on an actual R47.
+The user describes the target display as a memory LCD approximately 6×4 cm;
+evaluate static 1-bit images for readability at that physical size and normal
+viewing distance, not only in enlarged desktop previews.
 
 ## Architecture
 
@@ -62,6 +65,13 @@ Define a small Rust `Dither` trait operating on a grayscale image and returning
 a monochrome image whose API enforces black/white pixels. An enum selects the
 built-in algorithm. Initial algorithms: threshold, Floyd–Steinberg (default),
 and ordered Bayer. No dynamic plugin registry.
+
+Task 011 plans three additional shared CLI/GUI choices: Atkinson for a more
+contrasty classic look, Stucki for wider error diffusion, and fixed-mask blue
+noise for an organic texture. Use a single embedded tileable CC0 mask, with
+recorded provenance and no runtime generation. Existing algorithm names,
+Floyd–Steinberg default, tone pipeline, and output remain unchanged. These
+additions are planned, not implemented; visual comparisons are part of the task.
 
 Controls: framing, algorithm, brightness, contrast, gamma (neutral 1.0),
 threshold for the threshold algorithm, inversion, and reset. Specify numeric
