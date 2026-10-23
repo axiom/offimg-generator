@@ -48,7 +48,7 @@ fn help_explains_arguments_and_defaults() {
         "--fit",
         "--dither",
         "default: fit",
-        "default: threshold",
+        "default: floyd-steinberg",
     ] {
         assert!(help.contains(word), "{help}");
     }
@@ -151,4 +151,82 @@ fn failed_atomic_export_preserves_destination_and_cleans_up() {
     assert!(offimg_generator::export::save(&invalid, &input, &output, true).is_err());
     assert_eq!(fs::read(&output).unwrap(), b"keep me");
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+}
+
+#[test]
+fn every_cli_control_matches_shared_settings_and_defaults() {
+    use offimg_generator::{
+        dither::Algorithm,
+        pipeline::{Framing, Settings, Source},
+    };
+
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("gradient.png");
+    let output = directory.path().join("output.bmp");
+    image::RgbImage::from_fn(320, 200, |x, y| image::Rgb([((x + y) % 256) as u8; 3]))
+        .save(&input)
+        .unwrap();
+    let source = Source::open(&input).unwrap();
+    for algorithm in [
+        Algorithm::Threshold,
+        Algorithm::FloydSteinberg,
+        Algorithm::Bayer,
+    ] {
+        let settings = Settings {
+            framing: Framing::Crop,
+            algorithm,
+            brightness: -0.15,
+            contrast: 1.3,
+            gamma: 1.8,
+            threshold: 173,
+            invert: true,
+        };
+        let name = algorithm.to_string();
+        let result = convert(
+            &input,
+            &output,
+            &[
+                "--fit",
+                "crop",
+                "--dither",
+                &name,
+                "--brightness",
+                "-0.15",
+                "--contrast",
+                "1.3",
+                "--gamma",
+                "1.8",
+                "--threshold",
+                "173",
+                "--invert",
+                "--force",
+            ],
+        );
+        assert!(result.status.success(), "{result:?}");
+        let decoded = image::open(&output).unwrap().into_luma8();
+        assert_eq!(&decoded, source.convert(&settings).unwrap().pixels());
+    }
+    assert!(convert(&input, &output, &["--force"]).status.success());
+    assert_eq!(
+        &image::open(&output).unwrap().into_luma8(),
+        source.convert(&Settings::default()).unwrap().pixels()
+    );
+    let before = fs::read(&output).unwrap();
+    for (flag, values) in [
+        ("--brightness", ["-2", "NaN", "inf"]),
+        ("--contrast", ["-1", "NaN", "inf"]),
+        ("--gamma", ["0", "NaN", "inf"]),
+    ] {
+        for value in values {
+            assert_failed(
+                convert(&input, &output, &[flag, value, "--force"]),
+                "must be finite",
+            );
+            assert_eq!(fs::read(&output).unwrap(), before);
+        }
+    }
+    assert_failed(
+        convert(&input, &output, &["--threshold", "256"]),
+        "invalid value",
+    );
 }

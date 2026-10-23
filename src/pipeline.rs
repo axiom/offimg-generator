@@ -7,12 +7,24 @@ use crate::{HEIGHT, Result, WIDTH, dither::Algorithm, mono::MonoImage};
 pub const MAX_DIMENSION: u32 = 16_384;
 pub const MAX_PIXELS: u64 = 32_000_000;
 pub const MAX_DECODE_BYTES: u64 = 256 * 1024 * 1024;
+pub const BRIGHTNESS_RANGE: std::ops::RangeInclusive<f32> = -1.0..=1.0;
+pub const CONTRAST_RANGE: std::ops::RangeInclusive<f32> = 0.0..=4.0;
+pub const GAMMA_RANGE: std::ops::RangeInclusive<f32> = 0.1..=4.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Framing {
     #[default]
     Fit,
     Crop,
+}
+
+impl std::fmt::Display for Framing {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Fit => "fit",
+            Self::Crop => "crop",
+        })
+    }
 }
 
 impl std::str::FromStr for Framing {
@@ -32,6 +44,10 @@ pub struct Settings {
     pub framing: Framing,
     pub algorithm: Algorithm,
     pub threshold: u8,
+    pub brightness: f32,
+    pub contrast: f32,
+    pub gamma: f32,
+    pub invert: bool,
 }
 
 impl Default for Settings {
@@ -40,7 +56,53 @@ impl Default for Settings {
             framing: Framing::Fit,
             algorithm: Algorithm::default(),
             threshold: 128,
+            brightness: 0.0,
+            contrast: 1.0,
+            gamma: 1.0,
+            invert: false,
         }
+    }
+}
+
+impl Settings {
+    pub fn validate(&self) -> Result<()> {
+        for (name, value, range) in [
+            ("brightness", self.brightness, BRIGHTNESS_RANGE),
+            ("contrast", self.contrast, CONTRAST_RANGE),
+            ("gamma", self.gamma, GAMMA_RANGE),
+        ] {
+            if !range.contains(&value) {
+                return Err(format!(
+                    "{name} must be finite and in {}..={}",
+                    range.start(),
+                    range.end()
+                )
+                .into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply a fresh LUT to cached grayscale; never mutate a previous preview.
+    pub fn adjust(&self, gray: &GrayImage) -> Result<GrayImage> {
+        self.validate()?;
+        let lut: [u8; 256] = std::array::from_fn(|value| {
+            let normalized = value as f32 / 255.0;
+            let adjusted =
+                ((normalized - 0.5) * self.contrast + 0.5 + self.brightness).clamp(0.0, 1.0);
+            (255.0 * adjusted.powf(1.0 / self.gamma)).round() as u8
+        });
+        Ok(GrayImage::from_fn(gray.width(), gray.height(), |x, y| {
+            image::Luma([lut[usize::from(gray.get_pixel(x, y)[0])]])
+        }))
+    }
+
+    pub fn render(&self, gray: &GrayImage) -> Result<MonoImage> {
+        let mut mono = self.algorithm.apply(&self.adjust(gray)?, self.threshold);
+        if self.invert {
+            mono.invert();
+        }
+        Ok(mono)
     }
 }
 
@@ -152,8 +214,9 @@ impl Source {
     }
 
     pub fn convert(&self, settings: &Settings) -> Result<MonoImage> {
+        settings.validate()?;
         let gray = self.prepare(settings.framing);
-        Ok(settings.algorithm.apply(&gray, settings.threshold))
+        settings.render(&gray)
     }
 }
 

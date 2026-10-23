@@ -37,17 +37,34 @@ compatibility has not been verified.
 
 ```sh
 nix develop --command cargo run --bin offimg -- convert photo.jpg off-image.bmp
-nix develop --command cargo run --bin offimg -- convert photo.png off-image.bmp --fit crop --dither threshold --force
+nix develop --command cargo run --bin offimg -- convert photo.png off-image.bmp --fit crop --dither bayer --gamma 1.4 --force
 nix develop --command cargo run --bin offimg -- convert --help
 ```
 
 Fit (the default) preserves the whole image with white margins; crop fills the
-screen from the center. Threshold dithering is the initial algorithm. Conversion
+screen from the center. Floyd–Steinberg is the default dither; `threshold` and
+4×4 ordered `bayer` are also available. Conversion
 runs without a display server. Existing output needs `--force`; the source,
 including symlink and hardlink aliases, is always protected. Exports are written
 to a temporary file in the destination directory and atomically installed, so
 conversion/write failures do not truncate existing images. Temporary files are
 cleaned up on errors; replacing a symlink replaces the link, not its target.
+
+Controls (shared defaults and validation):
+
+| Flag | Range | Default |
+| --- | --- | --- |
+| `--brightness` | −1 to 1 | 0 |
+| `--contrast` | 0 to 4 | 1 |
+| `--gamma` | 0.1 to 4 | 1 |
+| `--threshold` | 0 to 255; threshold algorithm only | 128 |
+| `--invert` | swap output black/white | off |
+
+On normalized grayscale `s`, tone adjustment is
+`255 × clamp((s − 0.5) × contrast + 0.5 + brightness, 0, 1)^(1/gamma)`,
+rounded to the nearest byte. Gamma greater than 1 brightens. Dithering follows
+tone adjustment; inversion is last. Every preview/conversion starts from fresh
+grayscale, never from a previously adjusted result. Non-finite values are rejected.
 
 See [the design](docs/design.md) and [tasks](docs/tasks/README.md). Use `jj` to
 commit progress. Keep the two supplied BMP fixtures unchanged.

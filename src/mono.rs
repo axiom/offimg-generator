@@ -18,4 +18,10 @@ impl MonoImage {
     pub fn pixels(&self) -> &GrayImage {
         &self.pixels
     }
+
+    pub fn invert(&mut self) {
+        for pixel in self.pixels.pixels_mut() {
+            pixel[0] = 255 - pixel[0];
+        }
+    }
 }

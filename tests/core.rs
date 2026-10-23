@@ -205,6 +205,8 @@ fn conversion_matches_the_prepared_grayscale() {
     let settings = Settings::default();
     assert_eq!(
         original.convert(&settings).unwrap(),
-        Threshold(128).dither(&original.prepare(settings.framing))
+        settings
+            .render(&original.prepare(settings.framing))
+            .unwrap()
     );
 }

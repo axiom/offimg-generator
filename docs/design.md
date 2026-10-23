@@ -47,6 +47,17 @@ threshold for the threshold algorithm, inversion, and reset. Specify numeric
 ranges and adjustment formulas in the shared core, not independently in each
 front end. Other controls default to neutral settings; default framing is fit.
 
+Shared numeric ranges are brightness −1..1 (default 0), contrast 0..4
+(default 1), gamma 0.1..4 (default 1), and threshold 0..255 (default 128).
+All floating-point controls must be finite. For grayscale `s` normalized to
+0..1, compute `t = clamp((s - 0.5) * contrast + 0.5 + brightness, 0, 1)`;
+the adjusted byte is `round(255 * t^(1/gamma))`. A 256-entry lookup table
+applies this without mutating the cached grayscale. Threshold uses `>= cutoff`
+as white. Floyd–Steinberg scans left-to-right, top-to-bottom, with weights
+7/16 right, 3/16 down-left, 5/16 down, 1/16 down-right, discarding error
+outside image edges. Ordered Bayer uses a repeating 4×4 matrix with centered
+thresholds `(entry + 0.5)/16`. Inversion swaps output pixels after dithering.
+
 The GUI shows source and result with nearest-neighbor preview at integer zoom
 levels (1×, 2×, 3×). Export must match the current preview pixel-for-pixel.
 The CLI refuses to overwrite output without `--force`; the GUI confirms
