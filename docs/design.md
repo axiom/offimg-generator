@@ -1,0 +1,107 @@
+# R47 OFF-image generator
+
+## Scope
+
+A small, Linux-only Rust utility for personal use. Convert images to 400×240,
+1-bit BMP OFF-images for the SwissMicros R47, which uses DM42n hardware with
+community firmware. Provide both a command-line converter and a simple desktop
+GUI with a live preview. Confirm compatibility on an actual R47.
+
+## Architecture
+
+Use one Cargo package: a shared conversion library and two binaries, `offimg`
+and `offimg-gui`. Keep GUI dependencies optional behind a `gui` feature so a
+CLI-only build does not need the desktop stack. No multi-crate workspace,
+plugin system, or background workers initially.
+
+Suggested modules: `pipeline`, `dither`, `mono`, and `bmp`. Use `image` for
+decoding and resizing, `clap` for CLI parsing, `eframe`/`egui` for the GUI,
+and `rfd` with its desktop-portal backend for file dialogs. Check compatible
+crate versions and feature names when adding dependencies. Start with PNG,
+JPEG, BMP, and WebP input rather than every decoder.
+
+Both front ends share settings, defaults, validation, and conversion code:
+
+1. Decode, apply orientation, and composite transparency onto white.
+2. Fit with white margins or center-crop to 400×240, preserving aspect ratio.
+3. Convert to grayscale.
+4. Apply brightness, contrast, and gamma adjustments.
+5. Dither to black/white.
+6. Optionally invert.
+7. Preview or export the same monochrome buffer.
+
+Keep the original input and cache the resized grayscale image. Never apply
+adjustments cumulatively to a previous result. Start with processing on the
+UI thread at this small output size; measure before introducing concurrency.
+Enforce input decoder limits and retain the current image if loading fails.
+
+## Dithering and controls
+
+Define a small Rust `Dither` trait operating on a grayscale image and returning
+a monochrome image whose API enforces black/white pixels. An enum selects the
+built-in algorithm. Initial algorithms: threshold, Floyd–Steinberg (default),
+and ordered Bayer. No dynamic plugin registry.
+
+Controls: framing, algorithm, brightness, contrast, gamma (neutral 1.0),
+threshold for the threshold algorithm, inversion, and reset. Specify numeric
+ranges and adjustment formulas in the shared core, not independently in each
+front end. Other controls default to neutral settings; default framing is fit.
+
+The GUI shows source and result with nearest-neighbor preview at integer zoom
+levels (1×, 2×, 3×). Export must match the current preview pixel-for-pixel.
+The CLI refuses to overwrite output without `--force`; the GUI confirms
+replacement. Never overwrite the source image accidentally.
+
+## BMP findings
+
+The supplied `numbers.bmp` and `numbers2.bmp` remain unchanged in the repository
+root and serve as format fixtures. Header inspection found:
+
+| Field | Value in both files |
+| --- | --- |
+| Dimensions | 400×240 |
+| Bits per pixel | 1 |
+| Compression | BI_RGB (uncompressed) |
+| DIB header | 108-byte BITMAPV4HEADER |
+| Pixel offset | 130 bytes |
+| Row layout | Bottom-up; 50 pixel bytes + 2 padding bytes |
+| Pixel data size | 12,480 bytes |
+| Total size | 12,610 bytes |
+
+`numbers.bmp` has palette index 0 black, index 1 white. `numbers2.bmp` reverses
+that palette. Interpret pixel values through the palette, not a hardcoded bit
+polarity. Pixels within each byte use the standard BMP most-significant-bit
+first order. Resolution metadata differs and is not the image dimensions.
+
+Initially export the same V4 structure with a consistent black/white palette,
+standard bit order, bottom-up rows, and zeroed row padding. Inspect the rest of
+the sample V4 fields before implementing the writer. A visually monochrome
+24-bit BMP is not acceptable. Use an existing encoder only if it can produce
+the required structure; otherwise implement a small dedicated writer.
+
+Source: https://technical.swissmicros.com/dm42/doc/dm42_user_manual.html#off_images
+documents 400×240, 1-bit BMP files in `/OFFIMG/` for DM42/DM42n. This does not
+prove that a generated file works with the R47 community firmware.
+
+## Development
+
+Use the repository `flake.nix` and commit `flake.lock`; target the current
+machine, x86_64 Linux. Start OpenCode from `nix develop` after environment setup.
+Alternatively wrap commands with `nix develop --command ...`. The shell provides
+Rust tools and the Wayland/X11/OpenGL runtime libraries for the intended GUI.
+The host desktop must provide a working graphics driver and desktop portal for
+native file dialogs. Test those once the GUI exists; do not change global NixOS
+configuration as part of this project without asking.
+
+Once the Cargo package exists:
+
+```sh
+cargo test
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo run --bin offimg -- convert input.jpg output.bmp
+cargo run --features gui --bin offimg-gui
+```
+
+Defer saved presets, batch conversion, interactive crop dragging, automatic
+calculator copying, cross-platform releases, and Nix application packaging.
