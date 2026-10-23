@@ -119,6 +119,13 @@ The host desktop must provide a working graphics driver and desktop portal for
 native file dialogs. Test those once the GUI exists; do not change global NixOS
 configuration as part of this project without asking.
 
+The GUI uses optional eframe/egui 0.33.3 (compatible with the declared Rust
+1.88 minimum), Glow with Wayland/X11 and accessibility, and rfd 0.17.2 with
+the desktop-portal backend. The shell also supplies libdbus for rfd's dynamic
+loading. Source thumbnails are bounded to 400×240, while result textures use
+the exact export buffer. Integer zoom is measured in physical pixels so
+desktop UI scaling does not introduce fractional preview scaling.
+
 Once the Cargo package exists:
 
 ```sh

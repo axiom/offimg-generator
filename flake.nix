@@ -8,6 +8,7 @@
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
       guiLibraries = with pkgs; [
+        dbus
         libGL
         libxkbcommon
         wayland

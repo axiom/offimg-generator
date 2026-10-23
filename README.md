@@ -2,8 +2,8 @@
 
 A personal Linux Rust project to convert images to 400×240, 1-bit BMP files for
 the SwissMicros R47, with a CLI and live-preview desktop GUI. The development
-shell, shared conversion library, and command-line converter are ready. The GUI
-is not implemented yet.
+shell, shared conversion library, command-line converter, and optional desktop
+GUI are implemented. Desktop and hardware verification status is in the tasks.
 
 ## Development
 
@@ -18,8 +18,9 @@ first unfinished task.”
 
 The locked shell targets x86_64 Linux and supplies Rust, Cargo, rustfmt, Clippy,
 rust-analyzer, compiler/linker tooling, and Wayland/X11/OpenGL libraries.
-The eventual GUI also needs working host graphics drivers and a desktop portal
-for file dialogs; neither has been exercised by an application yet.
+The GUI also needs working host graphics drivers and a desktop portal for file
+dialogs. The shell provides the runtime libraries; it does not configure your
+desktop or calculator.
 
 Run library tests and checks with:
 
@@ -65,6 +66,26 @@ On normalized grayscale `s`, tone adjustment is
 rounded to the nearest byte. Gamma greater than 1 brightens. Dithering follows
 tone adjustment; inversion is last. Every preview/conversion starts from fresh
 grayscale, never from a previously adjusted result. Non-finite values are rejected.
+
+## Desktop GUI
+
+```sh
+nix develop --command cargo run --features gui --bin offimg-gui
+```
+
+Use **Open…** to select an image, adjust framing/dithering/tone, then **Export
+BMP…**. The source is shown as a scaled thumbnail; the result shows the exact
+400×240 export buffer. Both previews use nearest-neighbor textures at 1×, 2×,
+or 3× physical-pixel zoom (scroll for larger previews). **Reset controls** restores
+the same defaults as the CLI. Failed loads keep the previous image; errors stay
+visible. Existing destinations require confirmation and source aliases are
+protected. No calculator files are copied automatically.
+
+The optional `gui` feature uses egui/eframe with Glow, Wayland/X11 and
+accessibility support, plus rfd's desktop-portal file dialogs. If a dialog does
+not appear, check the host session's desktop portal; cancellation or unavailable
+dialogs leave the current image untouched. CLI-only builds do not enable any
+GUI dependencies.
 
 See [the design](docs/design.md) and [tasks](docs/tasks/README.md). Use `jj` to
 commit progress. Keep the two supplied BMP fixtures unchanged.

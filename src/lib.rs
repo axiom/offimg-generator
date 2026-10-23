@@ -3,6 +3,8 @@
 pub mod bmp;
 pub mod dither;
 pub mod export;
+#[cfg(feature = "gui")]
+pub mod gui;
 pub mod mono;
 pub mod pipeline;
 

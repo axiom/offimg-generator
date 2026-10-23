@@ -16,7 +16,9 @@ pub fn save(image: &MonoImage, source: &Path, output: &Path, overwrite: bool) ->
                 );
             }
             if !overwrite {
-                return Err("output already exists; use --force to replace it".into());
+                return Err(
+                    "output already exists; confirm replacement (--force in the CLI)".into(),
+                );
             }
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
