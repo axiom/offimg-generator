@@ -28,10 +28,11 @@ Order:
 9. [010 — Stack source and preview vertically](done/010-vertical-preview-layout.md).
 10. [006 — R47 hardware validation](todo/006-r47-validation.md).
 11. [011 — Additional monochrome dithering algorithms](todo/011-additional-dithering-algorithms.md).
+12. [012 — Five more dithering algorithms](todo/012-five-more-dithering-algorithms.md).
 
 Hardware validation can also be performed independently after 005 when the
 user and calculator are available; it need not wait for all GUI follow-ups.
-Task 011 can also be implemented independently while hardware is unavailable.
+Tasks 011–012 can also be implemented independently while hardware is unavailable.
 
 To resume: “Read `docs/design.md` and `docs/tasks/README.md`, then continue the
 first unfinished task.” No task runner or OpenCode-specific integration needed.

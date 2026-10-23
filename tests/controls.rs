@@ -1,18 +1,9 @@
 use image::{GrayImage, Luma};
 use offimg_generator::{dither::Algorithm, pipeline::Settings};
 
-const ALGORITHMS: [Algorithm; 6] = [
-    Algorithm::Threshold,
-    Algorithm::FloydSteinberg,
-    Algorithm::Bayer,
-    Algorithm::Atkinson,
-    Algorithm::Stucki,
-    Algorithm::BlueNoise,
-];
-
 #[test]
 fn algorithms_are_deterministic_binary_and_preserve_solid_black_and_white() {
-    for algorithm in ALGORITHMS {
+    for algorithm in Algorithm::ALL {
         for (width, height) in [(0, 0), (1, 1), (1, 31), (31, 1), (17, 23), (400, 240)] {
             for value in [0, 255] {
                 let gray = GrayImage::from_pixel(width, height, Luma([value]));
@@ -44,13 +35,18 @@ fn algorithms_are_deterministic_binary_and_preserve_solid_black_and_white() {
 fn algorithm_names_roundtrip_and_default_stays_floyd_steinberg() {
     assert_eq!(Algorithm::default(), Algorithm::FloydSteinberg);
     assert_eq!(Settings::default().algorithm, Algorithm::FloydSteinberg);
-    for (algorithm, name) in ALGORITHMS.into_iter().zip([
+    for (algorithm, name) in Algorithm::ALL.into_iter().zip([
         "threshold",
         "floyd-steinberg",
         "bayer",
         "atkinson",
         "stucki",
         "blue-noise",
+        "sierra",
+        "burkes",
+        "jarvis-judice-ninke",
+        "riemersma",
+        "clustered-dot",
     ]) {
         assert_eq!(algorithm.to_string(), name);
         assert_eq!(name.parse::<Algorithm>().unwrap(), algorithm);
@@ -141,6 +137,158 @@ fn blue_noise_uses_centered_thresholds_and_tiles_the_fixed_64_square_mask() {
 }
 
 #[test]
+fn sierra_burkes_and_jjn_match_diffusion_fixtures() {
+    // On a row of 112s, the second pixel is respectively 129.5, 140,
+    // and 128⅓: all white; all three third pixels remain below cutoff.
+    for (width, height, value, sierra, burkes, jjn) in [
+        (3, 1, 112, vec![0, 255, 0], vec![0, 255, 0], vec![0, 255, 0]),
+        (
+            1,
+            4,
+            112,
+            vec![0, 255, 0, 0],
+            vec![0, 255, 0, 255],
+            vec![0, 255, 0, 0],
+        ),
+        (
+            2,
+            2,
+            128,
+            vec![255, 0, 0, 255],
+            vec![255, 0, 0, 255],
+            vec![255, 0, 0, 255],
+        ),
+        (
+            3,
+            3,
+            64,
+            vec![0, 0, 0, 0, 0, 0, 0, 255, 0],
+            vec![0, 0, 0, 0, 0, 255, 0, 0, 0],
+            vec![0, 0, 0, 0, 0, 0, 0, 255, 0],
+        ),
+        (
+            5,
+            3,
+            96,
+            vec![0, 0, 0, 0, 0, 255, 255, 255, 0, 255, 0, 0, 0, 255, 0],
+            vec![0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0, 255],
+            vec![0, 0, 0, 0, 0, 255, 0, 255, 255, 0, 0, 0, 255, 0, 0],
+        ),
+    ] {
+        let gray = GrayImage::from_pixel(width, height, Luma([value]));
+        for (algorithm, expected) in [
+            (Algorithm::Sierra, sierra),
+            (Algorithm::Burkes, burkes),
+            (Algorithm::JarvisJudiceNinke, jjn),
+        ] {
+            assert_eq!(
+                algorithm.apply(&gray, 128).pixels().as_raw(),
+                &expected,
+                "{algorithm}: {width}×{height}, gray {value}"
+            );
+        }
+    }
+    let gray = GrayImage::from_raw(2, 2, vec![0, 100, 100, 0]).unwrap();
+    for algorithm in [
+        Algorithm::Sierra,
+        Algorithm::Burkes,
+        Algorithm::JarvisJudiceNinke,
+    ] {
+        assert_eq!(algorithm.apply(&gray, 128).pixels().as_raw(), &[0, 0, 0, 0]);
+    }
+}
+
+#[test]
+fn clustered_dot_grows_a_centered_cluster_and_tiles_without_endpoint_bias() {
+    let gray = GrayImage::from_pixel(4, 4, Luma([64]));
+    assert_eq!(
+        Algorithm::ClusteredDot.apply(&gray, 128).pixels().as_raw(),
+        &[0, 0, 0, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 0, 0, 0]
+    );
+    for value in 0..=255 {
+        let gray = GrayImage::from_pixel(9, 11, Luma([value]));
+        let mono = Algorithm::ClusteredDot.apply(&gray, 128);
+        for (x, y, pixel) in mono.pixels().enumerate_pixels() {
+            assert_eq!(pixel, mono.pixels().get_pixel(x % 4, y % 4));
+        }
+        let white = (0..4)
+            .flat_map(|y| (0..4).map(move |x| (x, y)))
+            .filter(|&(x, y)| mono.pixels().get_pixel(x, y)[0] == 255)
+            .count();
+        let expected = (0..16)
+            .filter(|&rank| f64::from(value) >= (f64::from(rank) + 0.5) * 255.0 / 16.0)
+            .count();
+        assert_eq!(white, expected);
+    }
+    let gray = GrayImage::from_pixel(4, 4, Luma([128]));
+    assert_ne!(
+        Algorithm::ClusteredDot.apply(&gray, 128),
+        Algorithm::Bayer.apply(&gray, 128)
+    );
+}
+
+#[test]
+fn riemersma_uses_hilbert_order_raw_error_and_a_finite_decaying_history() {
+    let gray = GrayImage::from_pixel(2, 2, Luma([110]));
+    // Hilbert visits (0,0), (0,1), (1,1), (1,0). Raw errors are
+    // 110, -145, 110, -145; feeding adjusted errors back gives another pattern.
+    assert_eq!(
+        Algorithm::Riemersma.apply(&gray, 128).pixels().as_raw(),
+        &[0, 255, 255, 0]
+    );
+
+    // Independent iterative Hilbert index decoding and oldest-first f64 history.
+    // More than 16 pixels exercises expiration; clipping must not advance history.
+    for (width, height) in [(8, 8), (5, 7), (1, 31), (31, 1)] {
+        let gray = GrayImage::from_fn(width, height, |x, y| {
+            Luma([((x * 17 + y * 31) % 256) as u8])
+        });
+        let side = width.max(height).next_power_of_two() as i32;
+        let mut expected = GrayImage::new(width, height);
+        let mut history = std::collections::VecDeque::new();
+        for distance in 0..side * side {
+            let (mut x, mut y, mut t, mut scale) = (0, 0, distance, 1);
+            while scale < side {
+                let rx = 1 & (t / 2);
+                let ry = 1 & (t ^ rx);
+                if ry == 0 {
+                    if rx == 1 {
+                        x = scale - 1 - x;
+                        y = scale - 1 - y;
+                    }
+                    std::mem::swap(&mut x, &mut y);
+                }
+                x += scale * rx;
+                y += scale * ry;
+                t /= 4;
+                scale *= 2;
+            }
+            if x >= width as i32 || y >= height as i32 {
+                continue;
+            }
+            let source = f64::from(gray.get_pixel(x as u32, y as u32)[0]);
+            let correction: f64 = history
+                .iter()
+                .rev()
+                .enumerate()
+                .map(|(age, error)| error * 16.0_f64.powf(-(age as f64) / 15.0))
+                .sum();
+            let new = if source + correction >= 127.5 { 255 } else { 0 };
+            expected.put_pixel(x as u32, y as u32, Luma([new]));
+            history.push_back(source - f64::from(new));
+            if history.len() > 16 {
+                history.pop_front();
+            }
+        }
+        assert_eq!(
+            Algorithm::Riemersma.apply(&gray, 128).pixels(),
+            &expected,
+            "{width}×{height}"
+        );
+    }
+}
+
+#[test]
 fn floyd_steinberg_distributes_error_without_wrapping_at_edges() {
     for (width, height) in [(2, 1), (1, 2)] {
         let gray = GrayImage::from_pixel(width, height, Luma([128]));
@@ -201,7 +349,7 @@ fn neutral_adjustments_preserve_every_gray_level_and_do_not_mutate_the_input() {
     changed.render(&gray).unwrap();
     assert_eq!(defaults.adjust(&gray).unwrap(), original);
     assert_eq!(gray, original);
-    for algorithm in ALGORITHMS {
+    for algorithm in Algorithm::ALL {
         let settings = Settings {
             algorithm,
             ..defaults.clone()

@@ -39,3 +39,7 @@ firmware, ambient lighting and viewing distance, text/thin-line readability,
 fine-dot visibility, apparent midtones, Atkinson shadow/highlight loss, and any
 blue-noise tile repetition. Desktop comparisons at a measured physical size are
 only a proxy, not completion of this real-display evaluation.
+
+Task 012 adds Sierra, Burkes, Jarvis–Judice–Ninke, Riemersma and clustered dot.
+Include them in the same comparisons, especially clustered-dot fine-detail loss
+and Riemersma's coarser texture versus the raster diffusion choices.

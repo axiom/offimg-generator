@@ -52,6 +52,11 @@ fn help_explains_arguments_and_defaults() {
         "atkinson",
         "stucki",
         "blue-noise",
+        "sierra",
+        "burkes",
+        "jarvis-judice-ninke",
+        "riemersma",
+        "clustered-dot",
     ] {
         assert!(help.contains(word), "{help}");
     }
@@ -170,14 +175,7 @@ fn every_cli_control_matches_shared_settings_and_defaults() {
         .save(&input)
         .unwrap();
     let source = Source::open(&input).unwrap();
-    for algorithm in [
-        Algorithm::Threshold,
-        Algorithm::FloydSteinberg,
-        Algorithm::Bayer,
-        Algorithm::Atkinson,
-        Algorithm::Stucki,
-        Algorithm::BlueNoise,
-    ] {
+    for algorithm in Algorithm::ALL {
         let settings = Settings {
             framing: Framing::Crop,
             algorithm,

@@ -43,6 +43,7 @@ compatibility has not been verified.
 just convert photo.jpg off-image.bmp
 just convert photo.png off-image.bmp --fit crop --dither bayer --gamma 1.4 --force
 just convert photo.jpg off-image.bmp --dither blue-noise
+just convert photo.jpg off-image.bmp --dither riemersma
 just cli convert --help
 ```
 
@@ -57,12 +58,20 @@ screen from the center. The CLI and GUI share these dithering choices:
 | `atkinson` | Atkinson | Contrasty classic look; discards a quarter of the error, so faint shadows/highlights can disappear. |
 | `stucki` | Stucki | Wider error diffusion for photos/gradients; more work, not always better. |
 | `blue-noise` | Blue noise | Organic dispersed dots from a fixed 64×64 tile; repetition can still be visible. |
+| `sierra` | Sierra | Full three-row diffusion; a different balance of texture and smooth gradients. |
+| `burkes` | Burkes | Two-row diffusion; lighter-weight alternative to Stucki/JJN. |
+| `jarvis-judice-ninke` | Jarvis–Judice–Ninke | Wide three-row diffusion for photos; subtle differences from Stucki, more work per pixel. |
+| `riemersma` | Riemersma | Hilbert-curve diffusion with a short decaying error history; less raster-direction bias, coarser texture and more work. |
+| `clustered-dot` | Clustered dot | Repeating 4×4 growing dot clusters for a newspaper-like texture; can obscure fine detail. |
 
 Blue noise uses an embedded [CC0 mask by Christoph Peters](assets/blue-noise/README.md),
 with no runtime randomness or downloads. All dithering is static, anchored to
 export pixels; preview zoom does not affect it. These are alternative looks,
 not verified improvements on the R47's approximately 6×4 cm memory LCD. Visual
 comparison at measured physical size and on real hardware is still pending.
+Riemersma uses a fixed 16-error history (newest weight 1, oldest 1/16), with
+off-image Hilbert coordinates skipped. Clustered dot is spatial halftoning,
+not an animation. No algorithm adds tuning controls or changes the tone pipeline.
 
 Conversion runs without a display server. Existing output needs `--force`; the source,
 including symlink and hardlink aliases, is always protected. Exports are written

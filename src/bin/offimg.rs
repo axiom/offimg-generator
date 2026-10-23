@@ -33,7 +33,8 @@ struct Convert {
     /// Framing: fit (white margins) or crop (center-crop)
     #[arg(long, default_value_t = Settings::default().framing)]
     fit: Framing,
-    /// Dithering algorithm: threshold, floyd-steinberg, bayer, atkinson, stucki, or blue-noise
+    /// Dithering algorithm: threshold, floyd-steinberg, bayer, atkinson, stucki, blue-noise,
+    /// sierra, burkes, jarvis-judice-ninke, riemersma, or clustered-dot
     #[arg(long, default_value_t = Settings::default().algorithm)]
     dither: Algorithm,
     /// Brightness offset (-1 to 1)

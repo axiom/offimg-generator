@@ -74,15 +74,39 @@ provenance, SHA-256 checksums, and license are in `assets/blue-noise/`.
 Thresholds are centered at `(byte + 0.5) * 255 / 256` and repeat at fixed output
 coordinates, with no runtime generation. Existing algorithm names,
 Floyd–Steinberg default, tone pipeline, and output remain unchanged. These
-additions still need desktop and measured physical-size visual comparisons;
-memory-LCD evaluation is handed off to task 006.
+additions received the user's overall approval; detailed per-image observations
+and measured physical-size comparisons remain unrecorded. Memory-LCD evaluation
+is handed off to task 006.
 
 Atkinson scans left-to-right/top-to-bottom, sending 1/8 of the error to
 `(1,0), (2,0), (-1,1), (0,1), (1,1), (0,2)`, intentionally losing 1/4.
 Stucki uses rows `X 8 4 / 2 4 8 4 2 / 1 2 4 2 1`, divided by 42.
 Both use floating-point error, white at `>= 127.5`, and discard out-of-bounds
 contributions without wrapping or renormalizing. The original Floyd–Steinberg
-implementation is unchanged; only the two new kernels share a private loop.
+implementation is unchanged; the additional raster kernels share a private loop.
+
+Following the user's request for all five further choices, task 012 adds full
+three-row Sierra (divisor 32), Burkes (32), Jarvis–Judice–Ninke (48), Riemersma,
+and 4×4 clustered-dot halftoning. CLI names are `sierra`, `burkes`,
+`jarvis-judice-ninke`, `riemersma`, and `clustered-dot`. The raster kernels retain
+the same traversal, floating-point error, cutoff and edge conventions as Stucki.
+Their rows are respectively `X 5 3 / 2 4 5 4 2 / 0 2 3 2 0`,
+`X 8 4 / 2 4 8 4 2`, and `X 7 5 / 3 5 7 5 3 / 1 3 5 3 1`.
+
+Riemersma follows a Hilbert curve over the smallest containing power-of-two
+square. The 2×2 order is (0,0), (0,1), (1,1), (1,0); clipped coordinates do not
+advance error history. Entire off-image quadrants are pruned so narrow images
+do not require scanning a large padded square. The last 16 **source minus output**
+errors are weighted by `16^(-age/15)` (newest age 0) and summed without
+normalization before thresholding at 127.5. History starts at zero per conversion;
+no corrected/accumulated error is fed back. This is the finite-history Riemersma
+variant, not simple one-error diffusion along a curve.
+
+Clustered dot uses rows `12 5 6 13 / 4 0 1 7 / 11 3 2 8 / 15 10 9 14`,
+centered thresholds `(rank + 0.5) * 255 / 16`, and fixed output-pixel tiling.
+The center cluster grows as gray increases, unlike Bayer's dispersed grid.
+All eleven algorithms share framing/tone/inversion and preview/export buffers;
+no new dependency, tuning control, output format or default change is introduced.
 
 Controls: framing, algorithm, brightness, contrast, gamma (neutral 1.0),
 threshold for the threshold algorithm, inversion, and reset. Specify numeric

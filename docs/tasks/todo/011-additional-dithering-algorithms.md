@@ -89,7 +89,7 @@ better. Compare them at actual 400×240 resolution before declaring acceptance.
       If hardware is available, repeat on the memory LCD at normal viewing
       distance under typical ambient light and record conditions; otherwise
       explicitly hand off real-display evaluation to task 006.
-- [ ] Check GUI algorithm switching remains responsive at 400×240, record a
+- [x] Check GUI algorithm switching remains responsive at 400×240, record a
       simple render timing comparison, and pass `just check`.
 
 ## Research references
@@ -111,8 +111,11 @@ use generated patterns and user-provided or suitably licensed photographs.
 
 ## Progress / handoff
 
-Software implementation and automated verification complete; keep this task in
-`todo/` until desktop visual/physical-size comparisons and live switching pass.
+Software implementation and automated verification complete. The user subsequently
+confirmed “all great” and requested more algorithms (task 012); this records
+overall desktop approval, including switching. Detailed per-image observations
+and a measured physical-size check were not supplied, so those acceptance items
+remain open rather than inferring ruler measurements or real hardware results.
 
 Implemented:
 
@@ -164,7 +167,8 @@ Next step (requires the user/desktop):
    generated gradient/gray patches, and text/thin-line art across Floyd–Steinberg,
    Bayer, Atkinson, Stucki and blue noise at 1× and 2×. Record shadow/highlight
    loss, dot texture, grid/directional patterns, tile repetition and switching
-   responsiveness. No actual visual observations have been recorded yet.
+   responsiveness. Overall user approval is recorded above, but no detailed
+   per-image observations have been supplied yet.
 2. Measure the displayed image with a ruler and compare at approximately
    **6×3.6 cm** (400:240 aspect ratio), not simply the GUI's 1× zoom. Record text
    and thin-line readability, fine dots, apparent midtones, and important detail

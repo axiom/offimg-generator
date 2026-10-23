@@ -346,6 +346,11 @@ impl Editor {
             (Algorithm::Atkinson, "Atkinson"),
             (Algorithm::Stucki, "Stucki"),
             (Algorithm::BlueNoise, "Blue noise"),
+            (Algorithm::Sierra, "Sierra"),
+            (Algorithm::Burkes, "Burkes"),
+            (Algorithm::JarvisJudiceNinke, "Jarvis–Judice–Ninke"),
+            (Algorithm::Riemersma, "Riemersma"),
+            (Algorithm::ClusteredDot, "Clustered dot"),
             (Algorithm::Threshold, "Threshold"),
         ] {
             ui.radio_value(&mut self.settings.algorithm, algorithm, label);
@@ -1224,7 +1229,7 @@ mod tests {
             .prepare_crop(editor.crop)
             .unwrap();
         let cached = editor.loaded.as_ref().unwrap().prepared.crop.as_ptr();
-        for algorithm in [Algorithm::Atkinson, Algorithm::Stucki, Algorithm::BlueNoise] {
+        for algorithm in Algorithm::ALL {
             let previous = editor.settings.clone();
             editor.settings.algorithm = algorithm;
             editor.settings.brightness = -0.1;
@@ -1263,14 +1268,7 @@ mod tests {
         .unwrap();
         let mut editor = Editor::default();
         load(&mut editor, &input, &ctx);
-        for algorithm in [
-            Algorithm::Threshold,
-            Algorithm::FloydSteinberg,
-            Algorithm::Bayer,
-            Algorithm::Atkinson,
-            Algorithm::Stucki,
-            Algorithm::BlueNoise,
-        ] {
+        for algorithm in Algorithm::ALL {
             editor.settings.algorithm = algorithm;
             editor.render_preview().unwrap();
             let start = std::time::Instant::now();

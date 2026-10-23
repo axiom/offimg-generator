@@ -93,6 +93,71 @@ impl Dither for Stucki {
     }
 }
 
+pub struct Sierra;
+
+impl Dither for Sierra {
+    fn dither(&self, image: &GrayImage) -> MonoImage {
+        diffuse(
+            image,
+            &[
+                (1, 0, 5.0 / 32.0),
+                (2, 0, 3.0 / 32.0),
+                (-2, 1, 2.0 / 32.0),
+                (-1, 1, 4.0 / 32.0),
+                (0, 1, 5.0 / 32.0),
+                (1, 1, 4.0 / 32.0),
+                (2, 1, 2.0 / 32.0),
+                (-1, 2, 2.0 / 32.0),
+                (0, 2, 3.0 / 32.0),
+                (1, 2, 2.0 / 32.0),
+            ],
+        )
+    }
+}
+
+pub struct Burkes;
+
+impl Dither for Burkes {
+    fn dither(&self, image: &GrayImage) -> MonoImage {
+        diffuse(
+            image,
+            &[
+                (1, 0, 8.0 / 32.0),
+                (2, 0, 4.0 / 32.0),
+                (-2, 1, 2.0 / 32.0),
+                (-1, 1, 4.0 / 32.0),
+                (0, 1, 8.0 / 32.0),
+                (1, 1, 4.0 / 32.0),
+                (2, 1, 2.0 / 32.0),
+            ],
+        )
+    }
+}
+
+pub struct JarvisJudiceNinke;
+
+impl Dither for JarvisJudiceNinke {
+    fn dither(&self, image: &GrayImage) -> MonoImage {
+        diffuse(
+            image,
+            &[
+                (1, 0, 7.0 / 48.0),
+                (2, 0, 5.0 / 48.0),
+                (-2, 1, 3.0 / 48.0),
+                (-1, 1, 5.0 / 48.0),
+                (0, 1, 7.0 / 48.0),
+                (1, 1, 5.0 / 48.0),
+                (2, 1, 3.0 / 48.0),
+                (-2, 2, 1.0 / 48.0),
+                (-1, 2, 3.0 / 48.0),
+                (0, 2, 5.0 / 48.0),
+                (1, 2, 3.0 / 48.0),
+                (2, 2, 1.0 / 48.0),
+            ],
+        )
+    }
+}
+
 fn diffuse(image: &GrayImage, taps: &[(isize, usize, f32)]) -> MonoImage {
     let width = image.width() as usize;
     let height = image.height() as usize;
@@ -147,6 +212,92 @@ impl Dither for OrderedBayer {
     }
 }
 
+pub struct ClusteredDot;
+
+impl Dither for ClusteredDot {
+    fn dither(&self, image: &GrayImage) -> MonoImage {
+        const MATRIX: [[u32; 4]; 4] =
+            [[12, 5, 6, 13], [4, 0, 1, 7], [11, 3, 2, 8], [15, 10, 9, 14]];
+        MonoImage::from_fn(image.width(), image.height(), |x, y| {
+            let level = MATRIX[y as usize % 4][x as usize % 4];
+            u32::from(image.get_pixel(x, y)[0]) * 32 >= (2 * level + 1) * 255
+        })
+    }
+}
+
+pub struct Riemersma;
+
+impl Dither for Riemersma {
+    fn dither(&self, image: &GrayImage) -> MonoImage {
+        let mut pixels = GrayImage::new(image.width(), image.height());
+        // Newest first: 16 raw quantization errors, exponentially decaying to 1/16.
+        let weights: [f32; 16] = std::array::from_fn(|age| 16.0_f32.powf(-(age as f32) / 15.0));
+        let mut errors = [0.0; 16];
+        let side = u64::from(image.width().max(image.height())).next_power_of_two() as i64;
+        visit_hilbert(
+            (0, 0),
+            (1, 0),
+            (0, 1),
+            side,
+            image.dimensions(),
+            &mut |x, y| {
+                let source = f32::from(image.get_pixel(x, y)[0]);
+                let adjusted = source + errors.iter().zip(weights).map(|(e, w)| e * w).sum::<f32>();
+                let new = if adjusted >= 127.5 { 255 } else { 0 };
+                pixels.put_pixel(x, y, image::Luma([new]));
+                errors.rotate_right(1);
+                // Store source - output, not adjusted - output: history is already weighted.
+                errors[0] = source - f32::from(new);
+            },
+        );
+        MonoImage::from_fn(image.width(), image.height(), |x, y| {
+            pixels.get_pixel(x, y)[0] == 255
+        })
+    }
+}
+
+// Clip whole quadrants, so a narrow rectangle does not traverse a huge padded square.
+fn visit_hilbert(
+    (x, y): (i64, i64),
+    a: (i64, i64),
+    b: (i64, i64),
+    side: i64,
+    bounds: (u32, u32),
+    visit: &mut impl FnMut(u32, u32),
+) {
+    let far_x = x + (a.0 + b.0) * (side - 1);
+    let far_y = y + (a.1 + b.1) * (side - 1);
+    if x.min(far_x) >= i64::from(bounds.0) || y.min(far_y) >= i64::from(bounds.1) {
+        return;
+    }
+    if side == 1 {
+        visit(x as u32, y as u32);
+        return;
+    }
+    let half = side / 2;
+    visit_hilbert((x, y), b, a, half, bounds, visit);
+    visit_hilbert((x + b.0 * half, y + b.1 * half), a, b, half, bounds, visit);
+    visit_hilbert(
+        (x + (a.0 + b.0) * half, y + (a.1 + b.1) * half),
+        a,
+        b,
+        half,
+        bounds,
+        visit,
+    );
+    visit_hilbert(
+        (
+            x + a.0 * (side - 1) + b.0 * (half - 1),
+            y + a.1 * (side - 1) + b.1 * (half - 1),
+        ),
+        (-b.0, -b.1),
+        (-a.0, -a.1),
+        half,
+        bounds,
+        visit,
+    );
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Algorithm {
     Threshold,
@@ -156,6 +307,11 @@ pub enum Algorithm {
     Atkinson,
     Stucki,
     BlueNoise,
+    Sierra,
+    Burkes,
+    JarvisJudiceNinke,
+    Riemersma,
+    ClusteredDot,
 }
 
 impl std::fmt::Display for Algorithm {
@@ -167,6 +323,11 @@ impl std::fmt::Display for Algorithm {
             Self::Atkinson => "atkinson",
             Self::Stucki => "stucki",
             Self::BlueNoise => "blue-noise",
+            Self::Sierra => "sierra",
+            Self::Burkes => "burkes",
+            Self::JarvisJudiceNinke => "jarvis-judice-ninke",
+            Self::Riemersma => "riemersma",
+            Self::ClusteredDot => "clustered-dot",
         })
     }
 }
@@ -182,14 +343,33 @@ impl std::str::FromStr for Algorithm {
             "atkinson" => Ok(Self::Atkinson),
             "stucki" => Ok(Self::Stucki),
             "blue-noise" => Ok(Self::BlueNoise),
+            "sierra" => Ok(Self::Sierra),
+            "burkes" => Ok(Self::Burkes),
+            "jarvis-judice-ninke" => Ok(Self::JarvisJudiceNinke),
+            "riemersma" => Ok(Self::Riemersma),
+            "clustered-dot" => Ok(Self::ClusteredDot),
             _ => Err(
-                "dither must be threshold, floyd-steinberg, bayer, atkinson, stucki, or blue-noise",
+                "dither must be threshold, floyd-steinberg, bayer, atkinson, stucki, blue-noise, sierra, burkes, jarvis-judice-ninke, riemersma, or clustered-dot",
             ),
         }
     }
 }
 
 impl Algorithm {
+    pub const ALL: [Self; 11] = [
+        Self::Threshold,
+        Self::FloydSteinberg,
+        Self::Bayer,
+        Self::Atkinson,
+        Self::Stucki,
+        Self::BlueNoise,
+        Self::Sierra,
+        Self::Burkes,
+        Self::JarvisJudiceNinke,
+        Self::Riemersma,
+        Self::ClusteredDot,
+    ];
+
     pub fn apply(self, image: &GrayImage, threshold: u8) -> MonoImage {
         match self {
             Self::Threshold => Threshold(threshold).dither(image),
@@ -198,6 +378,91 @@ impl Algorithm {
             Self::Atkinson => Atkinson.dither(image),
             Self::Stucki => Stucki.dither(image),
             Self::BlueNoise => BlueNoise.dither(image),
+            Self::Sierra => Sierra.dither(image),
+            Self::Burkes => Burkes.dither(image),
+            Self::JarvisJudiceNinke => JarvisJudiceNinke.dither(image),
+            Self::Riemersma => Riemersma.dither(image),
+            Self::ClusteredDot => ClusteredDot.dither(image),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::visit_hilbert;
+
+    #[test]
+    fn hilbert_order_clipping_and_coverage() {
+        let mut points = Vec::new();
+        visit_hilbert((0, 0), (1, 0), (0, 1), 4, (4, 4), &mut |x, y| {
+            points.push((x, y))
+        });
+        assert_eq!(
+            points,
+            vec![
+                (0, 0),
+                (1, 0),
+                (1, 1),
+                (0, 1),
+                (0, 2),
+                (0, 3),
+                (1, 3),
+                (1, 2),
+                (2, 2),
+                (2, 3),
+                (3, 3),
+                (3, 2),
+                (3, 1),
+                (2, 1),
+                (2, 0),
+                (3, 0),
+            ]
+        );
+        let mut clipped = Vec::new();
+        visit_hilbert((0, 0), (1, 0), (0, 1), 4, (3, 2), &mut |x, y| {
+            clipped.push((x, y))
+        });
+        assert_eq!(
+            clipped,
+            points
+                .into_iter()
+                .filter(|&(x, y)| x < 3 && y < 2)
+                .collect::<Vec<_>>()
+        );
+        for (width, height) in [
+            (0, 0),
+            (0, 7),
+            (7, 0),
+            (1, 1),
+            (2, 2),
+            (8, 8),
+            (400, 240),
+            (1, 16384),
+            (16384, 1),
+        ] {
+            let mut visited = vec![false; width as usize * height as usize];
+            let side = u64::from(width.max(height)).next_power_of_two() as i64;
+            let mut previous = None;
+            visit_hilbert(
+                (0, 0),
+                (1, 0),
+                (0, 1),
+                side,
+                (width, height),
+                &mut |x, y| {
+                    assert!(x < width && y < height);
+                    let index = y as usize * width as usize + x as usize;
+                    assert!(!visited[index]);
+                    visited[index] = true;
+                    if width == height
+                        && let Some((px, py)) = previous
+                    {
+                        assert_eq!(x.abs_diff(px) + y.abs_diff(py), 1);
+                    }
+                    previous = Some((x, y));
+                },
+            );
+            assert!(visited.into_iter().all(|pixel| pixel));
         }
     }
 }
