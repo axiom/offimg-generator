@@ -1,6 +1,9 @@
 use std::{
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::{
+        Arc,
+        mpsc::{self, Receiver, TryRecvError},
+    },
 };
 
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
@@ -11,11 +14,14 @@ use crate::{
     dither::Algorithm,
     export,
     mono::MonoImage,
-    pipeline::{BRIGHTNESS_RANGE, CONTRAST_RANGE, Framing, GAMMA_RANGE, Settings, Source},
+    pipeline::{
+        BRIGHTNESS_RANGE, CONTRAST_RANGE, CROP_ZOOM_RANGE, Crop, Framing, GAMMA_RANGE, Settings,
+        Source,
+    },
 };
 
 struct Prepared {
-    source: Source,
+    source: Arc<Source>,
     fit: GrayImage,
     crop: GrayImage,
     thumbnail: RgbImage,
@@ -23,7 +29,7 @@ struct Prepared {
 
 impl Prepared {
     fn open(path: &Path) -> Result<Self> {
-        let source = Source::open(path)?;
+        let source = Arc::new(Source::open(path)?);
         let fit = source.prepare(Framing::Fit);
         let crop = source.prepare(Framing::Crop);
         let thumbnail = image::imageops::thumbnail(source.image(), WIDTH, HEIGHT);
@@ -54,6 +60,13 @@ struct Loaded {
     mono: MonoImage,
     source_texture: TextureHandle,
     result_texture: TextureHandle,
+    cached_crop: Crop,
+    pending_crop: Option<PendingCrop>,
+}
+
+struct PendingCrop {
+    selection: Crop,
+    receiver: Receiver<std::result::Result<GrayImage, String>>,
 }
 
 pub struct Editor {
@@ -61,6 +74,7 @@ pub struct Editor {
     loaded: Option<Loaded>,
     pending: Option<Pending>,
     zoom: u32,
+    crop: Crop,
     error: Option<String>,
     status: String,
 }
@@ -72,6 +86,7 @@ impl Default for Editor {
             loaded: None,
             pending: None,
             zoom: 1,
+            crop: Crop::default(),
             error: None,
             status: "Open a PNG, JPEG, BMP, or WebP image to begin.".into(),
         }
@@ -150,15 +165,23 @@ impl Editor {
             mono,
             source_texture,
             result_texture,
+            cached_crop: Crop::default(),
+            pending_crop: None,
         });
+        self.crop = Crop::default();
         self.error = None;
         Ok(())
     }
 
     fn refresh(&mut self, previous: &Settings) -> Result<()> {
-        if let Some(loaded) = &mut self.loaded
-            && self.settings != *previous
-        {
+        if self.settings != *previous {
+            self.render_preview()?;
+        }
+        Ok(())
+    }
+
+    fn render_preview(&mut self) -> Result<()> {
+        if let Some(loaded) = &mut self.loaded {
             let mono = self
                 .settings
                 .render(loaded.prepared.gray(self.settings.framing))?;
@@ -170,6 +193,76 @@ impl Editor {
             if self.pending.is_none() {
                 self.status = "Preview updated.".into();
             }
+        }
+        Ok(())
+    }
+
+    fn reset(&mut self) {
+        self.settings = Settings::default();
+        self.zoom = 1;
+        self.crop = Crop::default();
+    }
+
+    fn crop_updating(&self) -> bool {
+        self.settings.framing == Framing::Crop
+            && self
+                .loaded
+                .as_ref()
+                .is_some_and(|loaded| loaded.cached_crop != self.crop)
+    }
+
+    fn update_crop(&mut self, ctx: &egui::Context) -> Result<()> {
+        let Some(loaded) = &mut self.loaded else {
+            return Ok(());
+        };
+        let mut changed = false;
+        if let Some(pending) = &loaded.pending_crop {
+            let result = match pending.receiver.try_recv() {
+                Ok(result) => Some(result),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => {
+                    Some(Err("crop worker stopped unexpectedly".into()))
+                }
+            };
+            if let Some(result) = result {
+                let pending = loaded.pending_crop.take().unwrap();
+                if pending.selection == self.crop {
+                    loaded.prepared.crop =
+                        result.map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+                    loaded.cached_crop = pending.selection;
+                    changed = self.settings.framing == Framing::Crop;
+                }
+            }
+        }
+        if self.settings.framing == Framing::Crop
+            && loaded.cached_crop != self.crop
+            && loaded.pending_crop.is_none()
+        {
+            self.crop = self.crop.constrained(
+                loaded.prepared.source.image().width(),
+                loaded.prepared.source.image().height(),
+            )?;
+            let selection = self.crop;
+            let source = Arc::clone(&loaded.prepared.source);
+            let (sender, receiver) = mpsc::sync_channel(1);
+            let ctx = ctx.clone();
+            // No request queue: while this runs, the UI only retains the latest selection.
+            std::thread::Builder::new()
+                .name("crop-preparer".into())
+                .spawn(move || {
+                    let result = source
+                        .prepare_crop(selection)
+                        .map_err(|error| error.to_string());
+                    let _ = sender.send(result);
+                    ctx.request_repaint();
+                })?;
+            loaded.pending_crop = Some(PendingCrop {
+                selection,
+                receiver,
+            });
+        }
+        if changed {
+            self.render_preview()?;
         }
         Ok(())
     }
@@ -237,8 +330,31 @@ impl Editor {
         ui.radio_value(
             &mut self.settings.framing,
             Framing::Crop,
-            "Fill · center crop",
+            "Fill · interactive crop",
         );
+        if self.settings.framing == Framing::Crop {
+            let label = ui.label("Crop zoom · 1×–16×");
+            ui.add(egui::Slider::new(&mut self.crop.zoom, CROP_ZOOM_RANGE).logarithmic(true))
+                .labelled_by(label.id);
+            ui.small("Drag image or scroll over frame. Keyboard: focus sliders, use arrow keys.");
+            for (label, value) in [
+                ("Pan horizontally", &mut self.crop.center_x),
+                ("Pan vertically", &mut self.crop.center_y),
+            ] {
+                let label = ui.label(label);
+                ui.add(egui::Slider::new(value, 0.0..=1.0))
+                    .labelled_by(label.id);
+            }
+            if let Some(loaded) = &self.loaded {
+                match self.crop.constrained(
+                    loaded.prepared.source.image().width(),
+                    loaded.prepared.source.image().height(),
+                ) {
+                    Ok(crop) => self.crop = crop,
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+        }
         ui.add_space(8.0);
         ui.heading("Dithering");
         for (algorithm, label) in [
@@ -276,8 +392,7 @@ impl Editor {
             )
             .clicked()
         {
-            self.settings = Settings::default();
-            self.zoom = 1;
+            self.reset();
         }
     }
 
@@ -288,6 +403,70 @@ impl Editor {
                 ui.selectable_value(&mut self.zoom, zoom, format!("{zoom}×"));
             }
         });
+    }
+
+    fn source_view(&mut self, ui: &mut egui::Ui, scale: f32) {
+        let Some(loaded) = &self.loaded else { return };
+        if self.settings.framing == Framing::Fit {
+            ui.image((
+                loaded.source_texture.id(),
+                loaded.source_texture.size_vec2() * scale,
+            ));
+            return;
+        }
+        let (width, height) = loaded.prepared.source.image().dimensions();
+        let bounds = self.crop.bounds(width, height).expect("validated crop");
+        let uv = egui::Rect::from_min_max(
+            egui::pos2(
+                bounds.x as f32 / width as f32,
+                bounds.y as f32 / height as f32,
+            ),
+            egui::pos2(
+                (bounds.x + bounds.width) as f32 / width as f32,
+                (bounds.y + bounds.height) as f32 / height as f32,
+            ),
+        );
+        let response = ui.add(
+            egui::Image::new((
+                loaded.source_texture.id(),
+                egui::vec2(WIDTH as f32, HEIGHT as f32) * scale,
+            ))
+            .uv(uv)
+            .sense(egui::Sense::drag()),
+        );
+        ui.painter().rect_stroke(
+            response.rect,
+            0.0,
+            egui::Stroke::new(1.0_f32, egui::Color32::YELLOW),
+            egui::StrokeKind::Inside,
+        );
+        let mut crop = self.crop;
+        if response.dragged() {
+            let delta = ui.input(|input| input.pointer.delta());
+            match crop.pan(
+                f64::from(delta.x / response.rect.width()),
+                f64::from(delta.y / response.rect.height()),
+                width,
+                height,
+            ) {
+                Ok(panned) => crop = panned,
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
+        if response.hovered() {
+            let scroll = ui.input_mut(|input| {
+                let delta = input.smooth_scroll_delta.y;
+                input.smooth_scroll_delta = egui::Vec2::ZERO;
+                input.raw_scroll_delta = egui::Vec2::ZERO;
+                delta
+            });
+            crop.zoom = (crop.zoom * (f64::from(scroll) * 0.005).exp())
+                .clamp(*CROP_ZOOM_RANGE.start(), *CROP_ZOOM_RANGE.end());
+        }
+        match crop.constrained(width, height) {
+            Ok(crop) => self.crop = crop,
+            Err(error) => self.error = Some(error.to_string()),
+        }
     }
 }
 
@@ -330,25 +509,39 @@ impl eframe::App for Editor {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.zoom_control(ui);
             ui.add_space(16.0);
-            if let Some(loaded) = &self.loaded {
+            if self.loaded.is_some() {
                 // Integer physical-pixel zoom, independent of the desktop's UI scaling.
                 let scale = self.zoom as f32 / ctx.pixels_per_point();
                 egui::ScrollArea::both().show(ui, |ui| {
                     ui.horizontal_top(|ui| {
-                        for (label, texture) in [
-                            ("Source", &loaded.source_texture),
-                            ("400 × 240 · export preview", &loaded.result_texture),
-                        ] {
-                            egui::Frame::group(ui.style())
-                                .inner_margin(12.0)
-                                .show(ui, |ui| {
-                                    ui.vertical(|ui| {
-                                        ui.strong(label);
-                                        ui.add_space(8.0);
-                                        ui.image((texture.id(), texture.size_vec2() * scale));
-                                    });
+                        egui::Frame::group(ui.style())
+                            .inner_margin(12.0)
+                            .show(ui, |ui| {
+                                ui.vertical(|ui| {
+                                    ui.strong("Source / crop editor");
+                                    ui.add_space(8.0);
+                                    self.source_view(ui, scale);
                                 });
-                        }
+                            });
+                        egui::Frame::group(ui.style())
+                            .inner_margin(12.0)
+                            .show(ui, |ui| {
+                                ui.vertical(|ui| {
+                                    ui.strong("400 × 240 · export preview");
+                                    ui.add_space(8.0);
+                                    let loaded = self.loaded.as_ref().unwrap();
+                                    ui.image((
+                                        loaded.result_texture.id(),
+                                        loaded.result_texture.size_vec2() * scale,
+                                    ));
+                                    if self.crop_updating() {
+                                        ui.spinner();
+                                        ui.label(
+                                            "Updating crop… Export uses the displayed preview.",
+                                        );
+                                    }
+                                });
+                            });
                     });
                 });
             } else {
@@ -357,6 +550,9 @@ impl eframe::App for Editor {
                 });
             }
         });
+        if let Err(error) = self.update_crop(ctx) {
+            self.error = Some(error.to_string());
+        }
     }
 }
 
@@ -376,6 +572,401 @@ mod tests {
         pending.receiver = receiver;
         editor.poll_load(ctx);
         assert!(editor.pending.is_none());
+    }
+
+    fn finish_crop(editor: &mut Editor, ctx: &egui::Context) {
+        let pending = editor
+            .loaded
+            .as_mut()
+            .unwrap()
+            .pending_crop
+            .as_mut()
+            .unwrap();
+        let result = pending.receiver.recv().unwrap();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender.send(result).unwrap();
+        pending.receiver = receiver;
+        editor.update_crop(ctx).unwrap();
+    }
+
+    #[test]
+    fn crop_editor_drag_and_wheel_do_not_scroll_the_surrounding_view() {
+        fn frame(editor: &mut Editor, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::Vec2 {
+            let mut offset = egui::Vec2::ZERO;
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(600.0, 400.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        offset = egui::ScrollArea::both()
+                            .show(ui, |ui| {
+                                editor.source_view(ui, 1.0);
+                                ui.allocate_space(egui::vec2(1000.0, 1000.0));
+                            })
+                            .state
+                            .offset;
+                    });
+                },
+            );
+            offset
+        }
+        let ctx = egui::Context::default();
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.bmp");
+        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        let mut editor = Editor::default();
+        load(&mut editor, &input, &ctx);
+        editor.settings.framing = Framing::Crop;
+        editor.crop.zoom = 2.0;
+        frame(
+            &mut editor,
+            &ctx,
+            vec![egui::Event::PointerMoved(egui::pos2(100.0, 100.0))],
+        );
+        let offset = frame(
+            &mut editor,
+            &ctx,
+            vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 20.0),
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert!(editor.crop.zoom > 2.0);
+        assert_eq!(offset, egui::Vec2::ZERO);
+        frame(
+            &mut editor,
+            &ctx,
+            vec![egui::Event::PointerButton {
+                pos: egui::pos2(100.0, 100.0),
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        let before = editor.crop;
+        let offset = frame(
+            &mut editor,
+            &ctx,
+            vec![egui::Event::PointerMoved(egui::pos2(140.0, 120.0))],
+        );
+        assert!(editor.crop.center_x < before.center_x && editor.crop.center_y < before.center_y);
+        assert_eq!(offset, egui::Vec2::ZERO);
+        frame(
+            &mut editor,
+            &ctx,
+            vec![
+                egui::Event::PointerButton {
+                    pos: egui::pos2(140.0, 120.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+                egui::Event::PointerMoved(egui::pos2(500.0, 300.0)),
+            ],
+        );
+        let zoom = editor.crop.zoom;
+        let offset = frame(
+            &mut editor,
+            &ctx,
+            vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -50.0),
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert_eq!(editor.crop.zoom, zoom);
+        assert!(offset.y > 0.0);
+    }
+
+    #[test]
+    fn crop_sliders_support_keyboard_zoom_and_pan() {
+        fn frame(editor: &mut Editor, ctx: &egui::Context, events: Vec<egui::Event>) {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(600.0, 1200.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| editor.controls(ui));
+                },
+            );
+        }
+        let ctx = egui::Context::default();
+        let mut editor = Editor::default();
+        editor.settings.framing = Framing::Crop;
+        editor.crop.zoom = 2.0;
+        let key = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut changed = [false; 3];
+        frame(&mut editor, &ctx, vec![]);
+        // Tab through the actual controls rather than relying on egui's generated widget IDs.
+        let mut ids = Vec::new();
+        for _ in 0..24 {
+            frame(&mut editor, &ctx, vec![key(egui::Key::Tab)]);
+            if let Some(id) = ctx.memory(|memory| memory.focused()) {
+                ids.push(id);
+            }
+        }
+        for id in ids {
+            ctx.memory_mut(|memory| memory.request_focus(id));
+            frame(&mut editor, &ctx, vec![]);
+            let before = editor.crop;
+            frame(&mut editor, &ctx, vec![key(egui::Key::ArrowRight)]);
+            changed[0] |= editor.crop.zoom != before.zoom;
+            changed[1] |= editor.crop.center_x != before.center_x;
+            changed[2] |= editor.crop.center_y != before.center_y;
+            if changed == [true; 3] {
+                break;
+            }
+        }
+        assert_eq!(changed, [true; 3]);
+    }
+
+    #[test]
+    fn crop_coalesces_requests_rejects_stale_results_and_exports_displayed_pixels() {
+        let ctx = egui::Context::default();
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("asymmetric.png");
+        let output = directory.path().join("output.bmp");
+        RgbImage::from_fn(1200, 720, |x, y| {
+            image::Rgb(
+                [if (400..800).contains(&x) && (120..360).contains(&y) {
+                    0
+                } else {
+                    255
+                }; 3],
+            )
+        })
+        .save(&input)
+        .unwrap();
+        let mut editor = Editor::default();
+        load(&mut editor, &input, &ctx);
+        let before = editor.settings.clone();
+        editor.settings.framing = Framing::Crop;
+        editor.settings.algorithm = Algorithm::Threshold;
+        editor.refresh(&before).unwrap();
+        let displayed = editor.loaded.as_ref().unwrap().mono.clone();
+
+        // Hold one request open so coalescing is deterministic, independent of CPU speed.
+        let first = Crop {
+            zoom: 2.0,
+            ..Crop::default()
+        };
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.loaded.as_mut().unwrap().pending_crop = Some(PendingCrop {
+            selection: first,
+            receiver,
+        });
+        for step in 0..100 {
+            editor.crop = Crop {
+                center_x: 0.5,
+                center_y: 1.0 / 3.0,
+                zoom: 3.0 + f64::from(step) / 100.0,
+            };
+            editor.update_crop(&ctx).unwrap();
+            assert_eq!(
+                editor
+                    .loaded
+                    .as_ref()
+                    .unwrap()
+                    .pending_crop
+                    .as_ref()
+                    .unwrap()
+                    .selection,
+                first
+            );
+        }
+        editor.crop = Crop {
+            center_x: 0.5,
+            center_y: 1.0 / 3.0,
+            zoom: 3.0,
+        };
+        assert!(editor.crop_updating());
+        editor.save_selection(Some(&output)).unwrap();
+        assert_eq!(
+            &image::open(&output).unwrap().into_luma8(),
+            displayed.pixels()
+        );
+
+        sender
+            .send(Ok(GrayImage::from_pixel(WIDTH, HEIGHT, image::Luma([255]))))
+            .unwrap();
+        editor.update_crop(&ctx).unwrap();
+        let loaded = editor.loaded.as_ref().unwrap();
+        assert_eq!(loaded.mono, displayed);
+        assert_eq!(loaded.pending_crop.as_ref().unwrap().selection, editor.crop);
+
+        // A completing crop must use current controls, not a worker's stale snapshot.
+        let previous = editor.settings.clone();
+        editor.settings.invert = true;
+        editor.settings.gamma = 1.7;
+        editor.refresh(&previous).unwrap();
+        finish_crop(&mut editor, &ctx);
+        assert!(!editor.crop_updating());
+        let loaded = editor.loaded.as_ref().unwrap();
+        assert!(loaded.pending_crop.is_none());
+        let selected = loaded.prepared.source.prepare_crop(editor.crop).unwrap();
+        assert!(selected.pixels().all(|p| p[0] == 0));
+        assert_eq!(loaded.mono, editor.settings.render(&selected).unwrap());
+        let cached = loaded.prepared.crop.as_ptr();
+        let pixels = loaded.mono.clone();
+        editor.zoom = 3;
+        editor.update_crop(&ctx).unwrap();
+        assert_eq!(
+            editor.loaded.as_ref().unwrap().prepared.crop.as_ptr(),
+            cached
+        );
+        assert_eq!(editor.loaded.as_ref().unwrap().mono, pixels);
+        editor.save_selection(Some(&output)).unwrap();
+        let decoded = image::open(&output).unwrap().into_luma8();
+        assert_eq!(&decoded, pixels.pixels());
+        for (pixel, color) in decoded.pixels().zip(preview(&pixels).pixels) {
+            assert_eq!(color.to_array(), [pixel[0], pixel[0], pixel[0], 255]);
+        }
+    }
+
+    #[test]
+    fn crop_survives_fit_toggle_but_reset_and_new_image_center_it() {
+        let ctx = egui::Context::default();
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.bmp");
+        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        let mut editor = Editor::default();
+        assert_eq!(editor.zoom, 1);
+        load(&mut editor, &input, &ctx);
+        editor.crop = Crop {
+            center_x: 0.4,
+            center_y: 0.3,
+            zoom: 4.0,
+        };
+        let before = editor.settings.clone();
+        editor.settings.framing = Framing::Crop;
+        editor.settings.brightness = 0.2;
+        editor.refresh(&before).unwrap();
+        editor.update_crop(&ctx).unwrap();
+        finish_crop(&mut editor, &ctx);
+        let selection = editor.crop;
+        let cached = editor.loaded.as_ref().unwrap().prepared.crop.as_ptr();
+        for framing in [Framing::Fit, Framing::Crop] {
+            let before = editor.settings.clone();
+            editor.settings.framing = framing;
+            editor.refresh(&before).unwrap();
+            editor.update_crop(&ctx).unwrap();
+            assert_eq!(editor.crop, selection);
+            assert_eq!(editor.settings.brightness, 0.2);
+            assert_eq!(
+                editor.loaded.as_ref().unwrap().prepared.crop.as_ptr(),
+                cached
+            );
+            assert!(editor.loaded.as_ref().unwrap().pending_crop.is_none());
+        }
+        let before = editor.settings.clone();
+        editor.zoom = 3;
+        editor.reset();
+        editor.refresh(&before).unwrap();
+        assert_eq!(editor.settings, Settings::default());
+        assert_eq!(editor.zoom, 1);
+        assert_eq!(editor.crop, Crop::default());
+        let loaded = editor.loaded.as_ref().unwrap();
+        assert_eq!(
+            loaded.mono,
+            loaded
+                .prepared
+                .source
+                .convert(&Settings::default())
+                .unwrap()
+        );
+
+        let before = editor.settings.clone();
+        editor.settings.framing = Framing::Crop;
+        editor.refresh(&before).unwrap();
+        editor.update_crop(&ctx).unwrap();
+        finish_crop(&mut editor, &ctx);
+        assert_eq!(editor.loaded.as_ref().unwrap().cached_crop, Crop::default());
+
+        // Loading a replacement drops the old crop receiver; no old-source result can install.
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.crop = selection;
+        editor.loaded.as_mut().unwrap().pending_crop = Some(PendingCrop {
+            selection,
+            receiver,
+        });
+        editor.settings.gamma = 1.5;
+        load(&mut editor, &input, &ctx);
+        assert!(sender.send(Ok(GrayImage::new(WIDTH, HEIGHT))).is_err());
+        assert_eq!(editor.crop, Crop::default());
+        assert_eq!(editor.settings.gamma, 1.5);
+        assert!(editor.loaded.as_ref().unwrap().pending_crop.is_none());
+        assert_eq!(
+            editor.loaded.as_ref().unwrap().mono,
+            editor
+                .loaded
+                .as_ref()
+                .unwrap()
+                .prepared
+                .source
+                .convert(&editor.settings)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    #[ignore = "manual crop timings on a generated 3840×2160 input"]
+    fn large_image_crop_timings() {
+        use std::time::Instant;
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("large.png");
+        RgbImage::from_fn(3840, 2160, |x, y| {
+            image::Rgb([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        })
+        .save(&input)
+        .unwrap();
+        let source = Source::open(&input).unwrap();
+        for zoom in [1.0, 2.0, 16.0] {
+            let start = Instant::now();
+            source
+                .prepare_crop(Crop {
+                    zoom,
+                    ..Crop::default()
+                })
+                .unwrap();
+            eprintln!("3840×2160 crop zoom {zoom}: {:?}", start.elapsed());
+        }
+        let ctx = egui::Context::default();
+        let mut editor = Editor::default();
+        load(&mut editor, &input, &ctx);
+        editor.settings.framing = Framing::Crop;
+        editor.crop.zoom = 2.0;
+        editor.update_crop(&ctx).unwrap();
+        let start = Instant::now();
+        for step in 0..200 {
+            editor.crop.center_x = 0.4 + f64::from(step) / 2000.0;
+            editor.update_crop(&ctx).unwrap();
+        }
+        eprintln!(
+            "200 UI crop-request updates while worker runs: {:?}",
+            start.elapsed()
+        );
+        while editor.crop_updating() {
+            finish_crop(&mut editor, &ctx);
+        }
+        assert_eq!(editor.loaded.as_ref().unwrap().cached_crop, editor.crop);
     }
 
     #[test]
@@ -408,7 +999,7 @@ mod tests {
         let prepared = Prepared {
             fit: source.prepare(Framing::Fit),
             crop: source.prepare(Framing::Crop),
-            source,
+            source: Arc::new(source),
             thumbnail,
         };
         eprintln!("both framing caches: {:?}", start.elapsed());

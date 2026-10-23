@@ -5,7 +5,7 @@ use offimg_generator::{
     HEIGHT, WIDTH, bmp,
     dither::{Dither, Threshold},
     mono::MonoImage,
-    pipeline::{Framing, MAX_DIMENSION, Settings, Source},
+    pipeline::{Crop, CropBounds, Framing, MAX_DIMENSION, Settings, Source},
 };
 
 fn encoded(image: impl Into<DynamicImage>, format: ImageFormat) -> Vec<u8> {
@@ -41,6 +41,188 @@ fn fit_has_white_margins_and_crop_uses_the_center() {
 }
 
 #[test]
+fn crop_bounds_clamp_pan_and_zoom_without_empty_selections() {
+    assert_eq!(
+        Crop::default().bounds(800, 240).unwrap(),
+        CropBounds {
+            x: 200,
+            y: 0,
+            width: 400,
+            height: 240
+        }
+    );
+    assert_eq!(
+        Crop::default().bounds(240, 800).unwrap(),
+        CropBounds {
+            x: 0,
+            y: 328,
+            width: 240,
+            height: 144
+        }
+    );
+    for (width, height) in [
+        (800, 240),
+        (240, 800),
+        (3, 7),
+        (1, 1),
+        (1, MAX_DIMENSION),
+        (MAX_DIMENSION, 1),
+    ] {
+        for zoom in [1.0, 1.5, 2.0, 16.0] {
+            for (center_x, center_y) in [(-10.0, -10.0), (0.5, 0.5), (10.0, 10.0)] {
+                let crop = Crop {
+                    center_x,
+                    center_y,
+                    zoom,
+                };
+                let bounds = crop.bounds(width, height).unwrap();
+                assert!(bounds.width > 0 && bounds.height > 0);
+                assert!(bounds.x + bounds.width <= width && bounds.y + bounds.height <= height);
+                let panned = crop
+                    .pan(1_000_000.0, 1_000_000.0, width, height)
+                    .unwrap()
+                    .bounds(width, height)
+                    .unwrap();
+                assert_eq!((panned.x, panned.y), (0, 0));
+                let panned = crop
+                    .pan(-1_000_000.0, -1_000_000.0, width, height)
+                    .unwrap()
+                    .bounds(width, height)
+                    .unwrap();
+                assert_eq!(
+                    (panned.x + panned.width, panned.y + panned.height),
+                    (width, height)
+                );
+            }
+        }
+    }
+    let crop = Crop {
+        zoom: 2.0,
+        ..Crop::default()
+    };
+    let before = crop.bounds(800, 240).unwrap();
+    assert_eq!((before.width, before.height), (200, 120));
+    let panned = crop
+        .pan(0.25, -0.5, 800, 240)
+        .unwrap()
+        .bounds(800, 240)
+        .unwrap();
+    assert_eq!((panned.x, panned.y), (before.x - 50, before.y + 60));
+    let zoomed = Crop { zoom: 4.0, ..crop }.bounds(800, 240).unwrap();
+    assert_eq!(
+        (zoomed.x + zoomed.width / 2, zoomed.y + zoomed.height / 2),
+        (400, 120)
+    );
+}
+
+#[test]
+fn invalid_crop_inputs_are_rejected_at_shared_boundaries() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for crop in [
+            Crop {
+                center_x: value,
+                ..Crop::default()
+            },
+            Crop {
+                center_y: value,
+                ..Crop::default()
+            },
+            Crop {
+                zoom: value,
+                ..Crop::default()
+            },
+        ] {
+            assert!(crop.bounds(800, 240).is_err());
+        }
+        assert!(Crop::default().pan(value, 0.0, 800, 240).is_err());
+        assert!(Crop::default().pan(0.0, value, 800, 240).is_err());
+    }
+    for zoom in [0.0, 0.99, 16.01] {
+        assert!(
+            Crop {
+                zoom,
+                ..Crop::default()
+            }
+            .bounds(800, 240)
+            .is_err()
+        );
+    }
+    assert!(Crop::default().bounds(0, 240).is_err());
+    assert!(Crop::default().bounds(400, 0).is_err());
+}
+
+#[test]
+fn crop_samples_selected_original_pixels_and_preserves_legacy_centered_output() {
+    let original = source(RgbImage::from_fn(1200, 720, |x, y| {
+        Rgb([if (400..800).contains(&x) && (120..360).contains(&y) {
+            0
+        } else {
+            255
+        }; 3])
+    }));
+    let crop = Crop {
+        center_x: 0.5,
+        center_y: 1.0 / 3.0,
+        zoom: 3.0,
+    };
+    assert_eq!(
+        crop.bounds(1200, 720).unwrap(),
+        CropBounds {
+            x: 400,
+            y: 120,
+            width: 400,
+            height: 240
+        }
+    );
+    assert!(
+        original
+            .prepare_crop(crop)
+            .unwrap()
+            .pixels()
+            .all(|p| p[0] == 0)
+    );
+    assert!(
+        original
+            .prepare_crop(Crop {
+                center_x: 0.0,
+                center_y: 0.0,
+                ..crop
+            })
+            .unwrap()
+            .pixels()
+            .all(|p| p[0] == 255)
+    );
+    for (width, height) in [(801, 241), (241, 801), (3, 7), (1, 1)] {
+        let original = source(RgbImage::from_fn(width, height, |x, y| {
+            Rgb([((x * 17 + y * 29) % 256) as u8; 3])
+        }));
+        let (cw, ch) =
+            if u64::from(width) * u64::from(HEIGHT) > u64::from(height) * u64::from(WIDTH) {
+                (height * WIDTH / HEIGHT, height)
+            } else {
+                (width, (width * HEIGHT / WIDTH).max(1))
+            };
+        let region = image::imageops::crop_imm(
+            original.image(),
+            (width - cw) / 2,
+            (height - ch) / 2,
+            cw,
+            ch,
+        )
+        .to_image();
+        let legacy = DynamicImage::ImageRgb8(image::imageops::resize(
+            &region,
+            WIDTH,
+            HEIGHT,
+            image::imageops::FilterType::Lanczos3,
+        ))
+        .into_luma8();
+        assert_eq!(original.prepare_crop(Crop::default()).unwrap(), legacy);
+        assert_eq!(original.prepare(Framing::Crop), legacy);
+    }
+}
+
+#[test]
 fn transparency_is_composited_on_white_before_resizing() {
     let image = source(RgbaImage::from_fn(3, 1, |x, _| {
         [
@@ -69,7 +251,25 @@ fn jpeg_exif_orientation_is_applied_during_decode() {
         let decoded = Source::decode(Cursor::new(oriented)).unwrap();
         let mut expected = image::load_from_memory(&jpeg).unwrap();
         expected.apply_orientation(image::metadata::Orientation::from_exif(orientation).unwrap());
-        assert_eq!(decoded.image(), &expected.into_rgb8());
+        let expected = expected.into_rgb8();
+        assert_eq!(decoded.image(), &expected);
+        let crop = Crop {
+            center_x: 0.0,
+            center_y: 1.0,
+            zoom: 2.0,
+        };
+        let bounds = crop.bounds(expected.width(), expected.height()).unwrap();
+        let region =
+            image::imageops::crop_imm(&expected, bounds.x, bounds.y, bounds.width, bounds.height)
+                .to_image();
+        let selected = DynamicImage::ImageRgb8(image::imageops::resize(
+            &region,
+            WIDTH,
+            HEIGHT,
+            image::imageops::FilterType::Lanczos3,
+        ))
+        .into_luma8();
+        assert_eq!(decoded.prepare_crop(crop).unwrap(), selected);
     }
     let rotated = {
         let mut expected = image::load_from_memory(&jpeg).unwrap();

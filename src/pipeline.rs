@@ -10,6 +10,109 @@ pub const MAX_DECODE_BYTES: u64 = 256 * 1024 * 1024;
 pub const BRIGHTNESS_RANGE: std::ops::RangeInclusive<f32> = -1.0..=1.0;
 pub const CONTRAST_RANGE: std::ops::RangeInclusive<f32> = 0.0..=4.0;
 pub const GAMMA_RANGE: std::ops::RangeInclusive<f32> = 0.1..=4.0;
+pub const CROP_ZOOM_RANGE: std::ops::RangeInclusive<f64> = 1.0..=16.0;
+
+/// Center coordinates are fractions of the oriented original, not its thumbnail.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Crop {
+    pub center_x: f64,
+    pub center_y: f64,
+    pub zoom: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CropBounds {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Default for Crop {
+    fn default() -> Self {
+        Self {
+            center_x: 0.5,
+            center_y: 0.5,
+            zoom: 1.0,
+        }
+    }
+}
+
+impl Crop {
+    pub fn constrained(self, width: u32, height: u32) -> Result<Self> {
+        if width == 0
+            || height == 0
+            || !self.center_x.is_finite()
+            || !self.center_y.is_finite()
+            || !CROP_ZOOM_RANGE.contains(&self.zoom)
+        {
+            return Err(
+                "crop needs nonempty dimensions, finite coordinates, and zoom in 1..=16".into(),
+            );
+        }
+        let (crop_width, crop_height) = self.size(width, height);
+        let half_x = f64::from(crop_width) / f64::from(width) / 2.0;
+        let half_y = f64::from(crop_height) / f64::from(height) / 2.0;
+        Ok(Self {
+            center_x: self.center_x.clamp(half_x, 1.0 - half_x),
+            center_y: self.center_y.clamp(half_y, 1.0 - half_y),
+            ..self
+        })
+    }
+
+    fn size(self, width: u32, height: u32) -> (u32, u32) {
+        let (base_width, base_height) =
+            if u64::from(width) * u64::from(HEIGHT) > u64::from(height) * u64::from(WIDTH) {
+                (
+                    (u64::from(height) * u64::from(WIDTH) / u64::from(HEIGHT)) as u32,
+                    height,
+                )
+            } else {
+                (
+                    width,
+                    ((u64::from(width) * u64::from(HEIGHT) / u64::from(WIDTH)) as u32).max(1),
+                )
+            };
+        // Whole source pixels keep even a 1-pixel input nonempty at maximum zoom.
+        (
+            ((f64::from(base_width) / self.zoom) as u32).max(1),
+            ((f64::from(base_height) / self.zoom) as u32).max(1),
+        )
+    }
+
+    pub fn bounds(self, width: u32, height: u32) -> Result<CropBounds> {
+        let crop = self.constrained(width, height)?;
+        let (crop_width, crop_height) = crop.size(width, height);
+        let origin = |center: f64, length: u32, size: u32| {
+            if center >= 1.0 - f64::from(size) / f64::from(length) / 2.0 {
+                length - size
+            } else {
+                (center * f64::from(length) - f64::from(size) / 2.0).floor() as u32
+            }
+        };
+        Ok(CropBounds {
+            x: origin(crop.center_x, width, crop_width),
+            y: origin(crop.center_y, height, crop_height),
+            width: crop_width,
+            height: crop_height,
+        })
+    }
+
+    /// Drag the image behind the fixed frame; deltas are fractions of frame size.
+    pub fn pan(self, dx: f64, dy: f64, width: u32, height: u32) -> Result<Self> {
+        if !dx.is_finite() || !dy.is_finite() {
+            return Err("crop drag must be finite".into());
+        }
+        let crop = self.constrained(width, height)?;
+        let bounds = crop.bounds(width, height)?;
+        Self {
+            center_x: crop.center_x - dx * f64::from(bounds.width) / f64::from(width),
+            center_y: crop.center_y - dy * f64::from(bounds.height) / f64::from(height),
+            ..crop
+        }
+        .constrained(width, height)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Framing {
@@ -157,7 +260,7 @@ impl Source {
 
     /// Cache this result in interactive callers until source or framing changes.
     pub fn prepare(&self, framing: Framing) -> GrayImage {
-        use image::imageops::{FilterType::Lanczos3, crop_imm, overlay, resize};
+        use image::imageops::{FilterType::Lanczos3, overlay, resize};
 
         let (width, height) = self.image.dimensions();
         let framed = match framing {
@@ -186,31 +289,23 @@ impl Source {
                 canvas
             }
             Framing::Crop => {
-                // Crop before resizing so extreme aspect ratios cannot create huge intermediates.
-                let (crop_width, crop_height) = if u64::from(width) * u64::from(HEIGHT)
-                    > u64::from(height) * u64::from(WIDTH)
-                {
-                    (
-                        (u64::from(height) * u64::from(WIDTH) / u64::from(HEIGHT)) as u32,
-                        height,
-                    )
-                } else {
-                    (
-                        width,
-                        ((u64::from(width) * u64::from(HEIGHT) / u64::from(WIDTH)) as u32).max(1),
-                    )
-                };
-                let cropped = crop_imm(
-                    &self.image,
-                    (width - crop_width) / 2,
-                    (height - crop_height) / 2,
-                    crop_width,
-                    crop_height,
-                );
-                resize(&cropped.to_image(), WIDTH, HEIGHT, Lanczos3)
+                return self
+                    .prepare_crop(Crop::default())
+                    .expect("valid centered crop");
             }
         };
         DynamicImage::ImageRgb8(framed).into_luma8()
+    }
+
+    pub fn prepare_crop(&self, crop: Crop) -> Result<GrayImage> {
+        use image::imageops::{FilterType::Lanczos3, crop_imm, resize};
+        let bounds = crop.bounds(self.image.width(), self.image.height())?;
+        // Crop before resizing so extreme aspect ratios cannot create huge intermediates.
+        let cropped = crop_imm(&self.image, bounds.x, bounds.y, bounds.width, bounds.height);
+        Ok(
+            DynamicImage::ImageRgb8(resize(&cropped.to_image(), WIDTH, HEIGHT, Lanczos3))
+                .into_luma8(),
+        )
     }
 
     pub fn convert(&self, settings: &Settings) -> Result<MonoImage> {

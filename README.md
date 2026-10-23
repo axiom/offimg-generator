@@ -77,10 +77,22 @@ just gui
 ```
 
 Use **Open…** to select an image, adjust framing/dithering/tone, then **Export
-BMP…**. The source is shown as a scaled thumbnail; the result shows the exact
-400×240 export buffer. Both previews use nearest-neighbor textures at 1×, 2×,
-or 3× physical-pixel zoom (scroll for larger previews). **Reset controls** restores
-the same defaults as the CLI. Failed loads keep the previous image; errors stay
+BMP…**. **Fit** shows the whole source with white margins. **Fill** uses a fixed
+400:240 frame: drag the image behind it, or use **Crop zoom** (1×–16×) and the
+horizontal/vertical pan sliders. Wheel scrolling zooms only over the crop frame;
+elsewhere it scrolls normally. Tab to a slider and use arrow keys, or edit its
+numeric value, to frame without dragging. At crop zoom 1× the selection starts
+as the largest centered crop; zoom keeps its center unless clamped at an edge.
+Selections stay inside the oriented original, rounded to whole source pixels
+(at least one per axis, even for tiny images).
+
+The source/crop editor uses a thumbnail as a framing guide; the separate result
+shows the exact 400×240 export buffer, resampled from the full-resolution original.
+**Preview zoom** (1×/2×/3× physical pixels, nearest-neighbor) only magnifies the
+views; it never changes exported content. Scroll to reach larger previews.
+Fit/Fill toggling retains the crop and tone settings. A new image centers crop
+zoom at 1×; **Reset controls** also restores the CLI's tone/framing defaults and
+1× preview magnification. Failed loads keep the previous image; errors stay
 visible. On the supported KDE Wayland desktop portal, existing destinations
 require only the native save dialog's replacement confirmation; there is no
 second in-app prompt. Cancellation writes nothing, and the source image and
@@ -91,8 +103,13 @@ copied automatically.
 Image decoding, full-resolution framing, and thumbnail preparation run in one
 background load, with a loading indicator and the previous preview retained.
 Open/export are disabled during loading; tone and framing controls remain live,
-and a successful load uses their latest values. Fit/Fill then switches between
-two cached grayscale buffers without resampling the original. The original is
+and a successful load uses their latest values. Fit/Fill switches between
+cached grayscale buffers; tone/dither changes do not resample the original.
+Crop changes also run off-thread, with one preparation at a time and no request
+queue: drag updates coalesce to the latest selection, and obsolete results are
+discarded. **Updating crop…** means the monochrome result still shows the last
+completed selection. Export always saves that displayed result, not a pending
+crop. The original is
 retained at full resolution; no extra downsizing changes image quality or CLI
 output. Preparing both modes can make the initial wait longer, but closing the
 window does not wait for the loader. The user confirmed that the GUI no longer

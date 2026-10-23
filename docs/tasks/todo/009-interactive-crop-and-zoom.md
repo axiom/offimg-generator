@@ -50,23 +50,53 @@ Do not add presets, rotation, free-aspect crop handles, or CLI crop controls.
 
 - [ ] On KDE Wayland, dragging and slider/wheel zoom select an off-center portion
       of a real image, with a fixed output-aspect frame and live result preview.
-- [ ] Crop zoom and preview magnification are clearly labeled and independent;
+- [x] Crop zoom and preview magnification are clearly labeled and independent;
       preview magnification alone never changes exported pixels.
-- [ ] Panning/zoom remain inside the source, including portrait, landscape,
+- [x] Panning/zoom remain inside the source, including portrait, landscape,
       tiny images, and extreme aspect ratios; invalid/non-finite input is handled.
-- [ ] Keyboard controls can adjust selection without mouse dragging/wheel use.
-- [ ] Tests cover crop bounds, coordinate mapping, centered defaults, edge
+- [x] Keyboard controls can adjust selection without mouse dragging/wheel use.
+- [x] Tests cover crop bounds, coordinate mapping, centered defaults, edge
       clamping, pan/zoom changes, Fit/Fill toggling, and reset/new-image behavior.
-- [ ] Tests verify selected source pixels and preview/export agreement using
+- [x] Tests verify selected source pixels and preview/export agreement using
       an asymmetric pattern, with orientation applied before crop coordinates.
 - [ ] Loading/dragging stays responsive on a representative large image, with
       no stale results or unbounded request queues if preparation is asynchronous.
-- [ ] Existing CLI output/defaults and Fit behavior are unchanged; `just check`
+- [x] Existing CLI output/defaults and Fit behavior are unchanged; `just check`
       passes, and controls/zoom semantics are documented.
 
 ## Progress / handoff
 
-Not started. Planning only. Current `Source::prepare(Framing::Crop)` always
-center-crops; the GUI source is only a thumbnail and `Editor::zoom` is display
-magnification. Relevant files: `src/pipeline.rs`, `src/gui.rs`, `tests/core.rs`,
-and GUI-state tests. Preserve both supplied BMP fixtures unchanged.
+Implemented; awaiting the user's KDE Wayland checks before moving to `done/`.
+
+- `src/pipeline.rs`: shared `Crop`/`CropBounds`, finite validation, 1×–16× zoom,
+  clamped normalized centers, frame-to-source drag mapping, crop-before-resize.
+  Centered 1× output remains pixel-identical to the previous integer crop.
+- `src/gui.rs`: fixed-frame Fill editor using thumbnail UVs, drag/wheel input,
+  keyboard-adjustable zoom/pan sliders, independent preview magnification,
+  retained Fit/Fill selection, reset/new-image behavior. Source pixels are shared
+  with one detached crop worker, with coalescing, stale-result rejection and a
+  visible pending label. Export uses the displayed monochrome buffer even pending.
+- Core/GUI tests cover bounds, tiny/extreme aspect ratios, invalid/non-finite
+  inputs, coordinate mapping, EXIF-before-crop, asymmetric selected pixels,
+  preview/export agreement, keyboard input, drag/wheel scroll isolation,
+  cache reuse, toggling, resets, new sources and stale/coalesced work.
+- Both supplied BMP fixtures remain unchanged. No CLI controls, new dependencies,
+  presets or task 010 layout/default-magnification changes added.
+
+Measurements: `nix develop --command cargo test --all-features
+large_image_crop_timings -- --ignored --nocapture` passed on a generated
+3840×2160 RGB PNG. Debug crop preparation: 1× 2.423 s, 2× 692 ms, 16× 62 ms.
+200 nonblocking request updates during preparation: 6.3 µs; this measures request
+coalescing, not drawing or real desktop responsiveness.
+
+Validation: `nix develop --command just check` passed (formatting, Clippy with
+warnings denied, 32 tests; two manual timing tests skipped). The crop timing
+test above was run separately. `nix develop --command cargo test
+--no-default-features` also passed all 24 CLI/core tests.
+
+Next: run `just gui` on KDE Wayland with a large real image. Verify off-center
+dragging, zoom slider/wheel, keyboard pan/zoom, Fit/Fill retention and Reset;
+check scrolling outside the frame and independence at 1×/2×/3× preview zoom.
+During a slow crop, export and confirm it matches the visible monochrome result;
+then confirm the latest selection appears without freezes or stale updates.
+Record the desktop result here; do not claim hardware compatibility from it.

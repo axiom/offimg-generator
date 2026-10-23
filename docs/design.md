@@ -12,7 +12,8 @@ GUI with a live preview. Confirm compatibility on an actual R47.
 Use one Cargo package: a shared conversion library and two binaries, `offimg`
 and `offimg-gui`. Keep GUI dependencies optional behind a `gui` feature so a
 CLI-only build does not need the desktop stack. No multi-crate workspace,
-plugin system, or async runtime. The GUI uses one background image-loading thread.
+plugin system, or async runtime. The GUI uses detached background loading and
+crop-preparation threads, with at most one request of each kind per editor/source.
 
 Suggested modules: `pipeline`, `dither`, `mono`, and `bmp`. Use `image` for
 decoding and resizing, `clap` for CLI parsing, `eframe`/`egui` for the GUI,
@@ -23,7 +24,8 @@ JPEG, BMP, and WebP input rather than every decoder.
 Both front ends share settings, defaults, validation, and conversion code:
 
 1. Decode, apply orientation, and composite transparency onto white.
-2. Fit with white margins or center-crop to 400×240, preserving aspect ratio.
+2. Fit with white margins or crop to 400×240, preserving aspect ratio (centered
+   in the CLI, interactive in the GUI).
 3. Convert to grayscale.
 4. Apply brightness, contrast, and gamma adjustments.
 5. Dither to black/white.
@@ -31,7 +33,8 @@ Both front ends share settings, defaults, validation, and conversion code:
 7. Preview or export the same monochrome buffer.
 
 Keep the oriented, white-composited original input and cache both exact
-400×240 Fit/Fill grayscale buffers in the GUI (192,000 bytes total). Never apply
+400×240 Fit/Fill grayscale buffers in the GUI (192,000 bytes total, plus a small
+pending crop result). Never apply
 adjustments cumulatively to a previous result. Measurements on a 3840×2160 JPEG
 in the debug build found full-source resizing cost about 2.4 s per framing,
 versus about 9 ms for cached tone/dither/texture updates. Caching avoids those
@@ -48,7 +51,7 @@ the old image and clear pending state. Closing drops the receiver without joinin
 the decoder. Decoder limits are unchanged; no full source is cloned to cross the
 thread boundary. At most the old source and one replacement coexist, plus the
 existing bounded decoder/resampling intermediates. Original dimensions/detail
-remain available for task 009, with coordinates tied to the oriented original.
+remain available for crop editing, with coordinates tied to the oriented original.
 Preparing both modes lengthens initial loading but removes reframing stalls;
 native dialogs and export remain synchronous. The user confirmed that the GUI
 no longer freezes on KDE Wayland, completing task 008's desktop check.
@@ -86,13 +89,31 @@ no-clobber writes. Source paths and their symlink/hardlink aliases remain
 rejected even after native approval. Other Linux portals are not verified.
 The user confirmed task 007's single native confirmation flow on KDE Wayland.
 
-Task 009 will add GUI-only crop editing: a fixed 400:240 frame, drag-to-pan,
-slider/wheel crop zoom, and keyboard alternatives. Keep the selection inside
-the oriented original; existing Fit mode retains white margins. Extend Fill
-mode, starting at centered 1× crop, and distinguish crop zoom from preview
-magnification. CLI flags/defaults stay unchanged. Retain selection when toggling
-Fit/Fill; new images and reset restore centered 1×. These controls are planned,
-not implemented; use shared crop math and preserve preview/export agreement.
+Fill now supports GUI-only crop editing: a fixed 400:240 frame, drag-to-pan,
+1×–16× slider/wheel crop zoom, and keyboard-adjustable zoom/pan sliders.
+Shared `Crop` math validates finite controls, clamps the normalized center inside
+the oriented original, and maps frame-relative drags to source coordinates.
+Whole-pixel crop dimensions/origins preserve the legacy centered CLI output;
+each axis stays at least one pixel for tiny/extreme-aspect inputs. Selection
+precedes Lanczos3 resizing. The thumbnail supplies only a UV-mapped framing guide,
+not conversion pixels; the monochrome preview remains the authoritative result.
+Fit retains white margins. Crop zoom is independent of preview magnification;
+Fit/Fill retains selection and tone, while new images/reset restore centered 1×.
+CLI flags, settings and defaults are unchanged.
+
+Each loaded source shares its original with a detached crop worker through `Arc`,
+without copying its pixels. Only one crop request runs at a time; further edits
+replace desired UI state, never append to a queue. After completion, mismatched
+selections are discarded and the latest desired selection is started. Replacing
+the source drops its old receiver, preventing old-source installation. Returning
+to Fit does not start crop work. Current tone/dither settings render an accepted
+grayscale result on the UI thread. While pending, keep the previous result and
+label it **Updating crop…**; export still writes exactly that displayed buffer.
+On a generated 3840×2160 RGB PNG in the debug build, crop preparation measured
+2.42 s / 692 ms / 62 ms at 1× / 2× / 16×; 200 request-coalescing calls while the
+worker ran took 6.3 µs (not an end-to-end UI timing). Headless egui tests exercise
+drag/wheel handling without page scrolling and keyboard slider adjustment.
+KDE Wayland interaction/responsiveness still requires user verification (009).
 
 Task 010 will stack the source/crop editor above the monochrome export preview,
 rather than side by side, to better fit the landscape images within the window.
