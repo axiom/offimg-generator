@@ -78,7 +78,9 @@ coordinates, with no runtime generation. Existing algorithm names,
 Floyd–Steinberg default, tone pipeline, and output remain unchanged. These
 additions received the user's confirmation closing tasks 011–013. Desktop/visual
 acceptance is recorded on that confirmation, without inventing detailed per-image
-observations or ruler measurements. Memory-LCD evaluation remains task 006.
+observations or ruler measurements. The user subsequently confirmed generated
+images look perfect on the device, completing task 006; firmware version and
+detailed per-algorithm hardware observations were not supplied.
 
 Atkinson scans left-to-right/top-to-bottom, sending 1/8 of the error to
 `(1,0), (2,0), (-1,1), (0,1), (1,1), (0,2)`, intentionally losing 1/4.
@@ -208,7 +210,8 @@ worker ran took 6.3 µs (not an end-to-end UI timing). Headless egui tests exerc
 drag/wheel handling without page scrolling and focused-frame keyboard adjustment.
 The user confirmed cropping/zooming, the updated slider-free UI, and responsiveness
 with a large image, completing task 009's desktop checks. Exact image dimensions
-were not recorded; calculator hardware compatibility remains unverified.
+were not recorded; calculator hardware compatibility was later accepted by the
+user in task 006.
 
 The source/crop editor is stacked above the monochrome export preview to better
 fit the landscape images within the window. The controls sidebar stays separate;
@@ -250,7 +253,7 @@ and zero compression. The value `0x73524742` is at file offset 54 (the red
 mask), **not** at the V4 color-space field (offset 70, zero). The last CIEXYZ
 endpoint component at offset 106 is 2; other masks, endpoints, and gamma
 fields are zero. These are unusual but unused for 1-bit BI_RGB. The dedicated
-writer preserves them pending hardware validation, with 3780 pixels/metre
+writer preserves them, now accepted in user hardware validation, with 3780 pixels/metre
 resolution, a black/white palette, and zero row padding.
 
 Input limits are 16,384 pixels per side, 32 million pixels total, and a
@@ -261,7 +264,8 @@ Lanczos3 resizing, avoiding large intermediates on extreme aspect ratios.
 
 Source: https://technical.swissmicros.com/dm42/doc/dm42_user_manual.html#off_images
 documents 400×240, 1-bit BMP files in `/OFFIMG/` for DM42/DM42n. This does not
-prove that a generated file works with the R47 community firmware.
+alone prove that a generated file works with the R47 community firmware; the
+user's successful device check is recorded in completed task 006.
 
 ## Development
 

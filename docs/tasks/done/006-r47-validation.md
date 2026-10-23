@@ -15,17 +15,20 @@ Do not automatically mount, modify, or eject the calculator's filesystem.
 
 ## Acceptance
 
-- [ ] User confirms the correct OFF-image directory for their R47 firmware.
-- [ ] Test pattern displays without inversion, mirroring, flipping, or shifts.
-- [ ] Text/line art and dithered photograph both display successfully.
-- [ ] Any required format corrections have regression tests.
-- [ ] Basic usage, transfer instructions, and tested firmware are documented.
+- [x] User confirms generated images display correctly on their R47 and accepts
+  hardware validation as complete.
+- [x] No format corrections were reported or required.
+- [x] Basic usage and hardware confirmation are documented in README; firmware
+  version and exact transfer directory were not supplied.
 
 ## Progress / handoff
 
-Not started. Requires the user and physical hardware; software-only testing is
-not a substitute. Preserve existing calculator files and safely eject after
-manual copying.
+Complete: the user tested generated images on the device, reported “Looks
+perfect”, and explicitly requested closure. This records user-confirmed hardware
+acceptance, not an inference from software tests. Firmware version, exact transfer
+directory, individual test images/settings, lighting and viewing distance were
+not supplied; no detailed per-pattern or per-algorithm observations are claimed.
+The comparison guidance below is retained for reference, not as pending work.
 
 The requested GUI follow-ups (007–010) take priority in the normal work order.
 This hardware check can still run independently when the user and calculator

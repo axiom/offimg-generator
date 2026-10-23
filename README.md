@@ -34,8 +34,9 @@ just build  # build the CLI without GUI dependencies
 ```
 
 The core accepts PNG, JPEG, BMP, and WebP, applies orientation and white alpha
-compositing, and exports genuine 400×240, 1-bit BMP files. R47 hardware
-compatibility has not been verified.
+compositing, and exports genuine 400×240, 1-bit BMP files. The user confirmed
+generated images display correctly on their R47, completing hardware validation.
+The tested firmware version and exact transfer directory were not recorded.
 
 ## Command line
 
@@ -74,8 +75,9 @@ Blue noise uses an embedded [CC0 mask by Christoph Peters](assets/blue-noise/REA
 with no runtime randomness or downloads. All dithering is static, anchored to
 export pixels; preview zoom does not affect it. These are alternative looks,
 not verified improvements on the R47's approximately 6×4 cm memory LCD. The user
-confirmed desktop acceptance of tasks 011–013; real hardware evaluation remains
-pending in task 006.
+confirmed desktop acceptance of tasks 011–013 and subsequently accepted hardware
+validation in [task 006](docs/tasks/done/006-r47-validation.md). No detailed
+per-algorithm hardware comparison was recorded.
 Riemersma uses a fixed 16-error history (newest weight 1, oldest 1/16), with
 off-image Hilbert coordinates skipped. Clustered dot is spatial halftoning,
 not an animation. No algorithm adds tuning controls or changes the tone pipeline.
