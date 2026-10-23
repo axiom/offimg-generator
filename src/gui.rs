@@ -779,7 +779,6 @@ impl Editor {
             let scroll = ui.input_mut(|input| {
                 let delta = input.smooth_scroll_delta.y;
                 input.smooth_scroll_delta = egui::Vec2::ZERO;
-                input.raw_scroll_delta = egui::Vec2::ZERO;
                 delta
             });
             crop.zoom = (crop.zoom * (f64::from(scroll) * 0.005).exp())
@@ -793,12 +792,16 @@ impl Editor {
 }
 
 impl eframe::App for Editor {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_arch = "wasm32")]
         self.poll_web(ctx);
         self.poll_load(ctx);
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
         let previous = self.settings.clone();
-        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+        egui::Panel::top("toolbar").show(ui, |ui| {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.heading("R47 OFF-image");
@@ -811,10 +814,10 @@ impl eframe::App for Editor {
             });
             ui.add_space(8.0);
         });
-        egui::SidePanel::left("controls")
-            .default_width(240.0)
+        egui::Panel::left("controls")
+            .default_size(240.0)
             .resizable(false)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 ui.add_space(12.0);
                 ui.spacing_mut().item_spacing.y = 8.0;
                 ui.spacing_mut().slider_width = 150.0;
@@ -823,14 +826,14 @@ impl eframe::App for Editor {
         if let Err(error) = self.refresh(&previous) {
             self.error = Some(error.to_string());
         }
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+        egui::Panel::bottom("status").show(ui, |ui| {
             if let Some(error) = &self.error {
                 ui.colored_label(egui::Color32::RED, format!("Error: {error}"));
             }
             ui.label(&self.status);
             ui.small("400×240 · 1-bit BMP · R47 hardware compatibility not yet verified");
         });
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             self.zoom_control(ui);
             ui.add_space(16.0);
             if self.loaded.is_some() {
@@ -841,7 +844,7 @@ impl eframe::App for Editor {
                 });
             }
         });
-        if let Err(error) = self.update_crop(ctx) {
+        if let Err(error) = self.update_crop(&ctx) {
             self.error = Some(error.to_string());
         }
         if let Err(error) = self.poll_render() {
@@ -918,7 +921,7 @@ mod tests {
                     let pixels = editor.loaded.as_ref().unwrap().mono.clone();
                     let mut view = None;
                     let mut frame = |size, events| {
-                        ctx.run(
+                        ctx.run_ui(
                             egui::RawInput {
                                 screen_rect: Some(egui::Rect::from_min_size(
                                     egui::Pos2::ZERO,
@@ -927,15 +930,15 @@ mod tests {
                                 events,
                                 ..Default::default()
                             },
-                            |ctx| {
-                                egui::CentralPanel::default().show(ctx, |ui| {
+                            |ui| {
+                                egui::CentralPanel::default().show(ui, |ui| {
                                     view = Some(editor.preview_views(ui));
                                 });
                             },
                         )
                     };
                     let large = egui::vec2(2000.0, 2000.0);
-                    frame(large, vec![]);
+                    frame(large, vec![]).drop_without_applying_deltas();
                     let rendered = frame(large, vec![]);
                     let images: Vec<_> = rendered
                         .shapes
@@ -957,9 +960,10 @@ mod tests {
                     }
                     assert!(images[0].bottom() < images[1].top());
                     assert_eq!(images[0].left(), images[1].left());
+                    rendered.drop_without_applying_deltas();
 
                     let small = egui::vec2(300.0, 200.0);
-                    frame(small, vec![]);
+                    frame(small, vec![]).drop_without_applying_deltas();
                     frame(
                         small,
                         vec![
@@ -968,16 +972,19 @@ mod tests {
                             egui::Event::MouseWheel {
                                 unit: egui::MouseWheelUnit::Point,
                                 delta: egui::vec2(-2000.0, -2000.0),
+                                phase: egui::TouchPhase::Move,
+                                source: egui::MouseWheelSource::Wheel,
                                 modifiers: egui::Modifiers::NONE,
                             },
                         ],
-                    );
+                    )
+                    .drop_without_applying_deltas();
                     let view = view.unwrap();
                     assert!(view.content_size.x >= expected.x);
                     assert!(view.content_size.y >= expected.y * 2.0);
-                    assert!(view.state.offset.y > 0.0);
+                    assert!(view.state.clamped_offset().y > 0.0);
                     if expected.x > view.inner_rect.width() {
-                        assert!(view.state.offset.x > 0.0);
+                        assert!(view.state.clamped_offset().x > 0.0);
                     }
                     assert_eq!(editor.crop, Crop::default());
                     assert_eq!(editor.loaded.as_ref().unwrap().mono, pixels);
@@ -992,7 +999,7 @@ mod tests {
     fn crop_editor_drag_and_wheel_do_not_scroll_the_surrounding_view() {
         fn frame(editor: &mut Editor, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::Vec2 {
             let mut offset = egui::Vec2::ZERO;
-            let _ = ctx.run(
+            let output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -1001,12 +1008,13 @@ mod tests {
                     events,
                     ..Default::default()
                 },
-                |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        offset = editor.preview_views(ui).state.offset;
+                |ui| {
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        offset = editor.preview_views(ui).state.clamped_offset();
                     });
                 },
             );
+            output.drop_without_applying_deltas();
             offset
         }
         let ctx = egui::Context::default();
@@ -1033,6 +1041,8 @@ mod tests {
             vec![egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, 20.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
                 modifiers: egui::Modifiers::NONE,
             }],
         );
@@ -1076,6 +1086,8 @@ mod tests {
             vec![egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, -50.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
                 modifiers: egui::Modifiers::NONE,
             }],
         );
@@ -1086,7 +1098,7 @@ mod tests {
     #[test]
     fn crop_frame_supports_keyboard_zoom_and_pan_without_sliders() {
         fn frame(editor: &mut Editor, ctx: &egui::Context, events: Vec<egui::Event>) {
-            let _ = ctx.run(
+            let output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -1095,10 +1107,11 @@ mod tests {
                     events,
                     ..Default::default()
                 },
-                |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| editor.source_view(ui, 1.0));
+                |ui| {
+                    egui::CentralPanel::default().show(ui, |ui| editor.source_view(ui, 1.0));
                 },
             );
+            output.drop_without_applying_deltas();
         }
         let ctx = egui::Context::default();
         let directory = tempfile::tempdir().unwrap();
