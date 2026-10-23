@@ -60,11 +60,11 @@ task's scope.
 
 ## Acceptance
 
-- [ ] Loading state appears promptly; a large, valid image loads while the
+- [x] Loading state appears promptly; a large, valid image loads while the
       window continues to repaint, move, and respond to closing on KDE Wayland.
 - [x] Decode and initial full-resolution preparation do not run on the UI thread;
       egui texture updates do run there.
-- [ ] Repeated Fit/Fill changes on a representative 4K wallpaper remain
+- [x] Repeated Fit/Fill changes on a representative 4K wallpaper remain
       responsive, retain tone settings, and cannot apply stale preparation.
 - [x] Evaluate downsizing/caching before expanding threading; record the chosen
       approach and before/after stage timings, including framing changes.
@@ -79,13 +79,13 @@ task's scope.
       without relying on arbitrary sleeps, including settings consistency.
 - [x] Preview/export agreement, decoder limits, and CLI-only behavior remain
       covered; `just check` passes.
-- [ ] Record a representative image's dimensions/format, load timings, and
+- [x] Record a representative image's dimensions/format, load timings, and
       observed desktop responsiveness; do not use a fragile timing assertion.
 
 ## Progress / handoff
 
-Implemented; awaiting the user's KDE Wayland check. Kept in `todo/` until that
-check passes. All code changes are GUI-only in `src/gui.rs`; the shared pipeline,
+Complete. After the requested desktop check, the user confirmed: “the gui no
+longer freezes.” All code changes are GUI-only in `src/gui.rs`; the shared pipeline,
 decoder limits, CLI behavior, dependencies, and supplied BMP fixtures are unchanged.
 
 Chosen approach: cache both exact original-resolution Fit/Fill preparations
@@ -144,7 +144,15 @@ worker disconnection, subsequent successful loading, receiver drop on closing,
 cache agreement, source protection, and preview/export agreement. Synchronization
 uses channels, not sleeps. The timing test remains ignored for normal checks.
 
-### Next step: manual KDE Wayland acceptance
+### Desktop verification
+
+The user confirmed that the GUI no longer freezes after being asked to load a
+4K image, move/close while loading, and toggle Fit/Fill on KDE Wayland. This is
+the desktop responsiveness sign-off; no separate per-action timings or detailed
+visual-quality observations were supplied. Failure recovery, settings consistency,
+and preview/export agreement are additionally covered by the automated tests above.
+
+The manual check procedure was:
 
 Run `just gui` (or `nix develop --command just gui`) and:
 
@@ -158,7 +166,6 @@ Run `just gui` (or `nix develop --command just gui`) and:
 4. Try an invalid/oversized file, then a valid file; verify error/recovery and
    that export still matches the displayed preview.
 
-Record the user's observed desktop results, check the remaining acceptance items,
-and move this file to `done/` only after those pass. Task 009 builds on `Prepared`
-and the pending/result model; it must regenerate selected crops from the retained
+Task 009 is next. It builds on `Prepared` and the pending/result model and must
+regenerate selected crops from the retained
 oriented original rather than either fixed framing cache.

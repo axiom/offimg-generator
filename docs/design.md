@@ -50,7 +50,8 @@ thread boundary. At most the old source and one replacement coexist, plus the
 existing bounded decoder/resampling intermediates. Original dimensions/detail
 remain available for task 009, with coordinates tied to the oriented original.
 Preparing both modes lengthens initial loading but removes reframing stalls;
-native dialogs and export remain synchronous. KDE Wayland verification is pending.
+native dialogs and export remain synchronous. The user confirmed that the GUI
+no longer freezes on KDE Wayland, completing task 008's desktop check.
 
 ## Dithering and controls
 

@@ -95,8 +95,8 @@ and a successful load uses their latest values. Fit/Fill then switches between
 two cached grayscale buffers without resampling the original. The original is
 retained at full resolution; no extra downsizing changes image quality or CLI
 output. Preparing both modes can make the initial wait longer, but closing the
-window does not wait for the loader. KDE Wayland responsiveness verification is
-still pending in task 008.
+window does not wait for the loader. The user confirmed that the GUI no longer
+freezes on KDE Wayland (task 008).
 
 The optional `gui` feature uses egui/eframe with Glow, Wayland/X11 and
 accessibility support, plus rfd's desktop-portal file dialogs. If a dialog does
