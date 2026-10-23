@@ -79,6 +79,21 @@ the sample V4 fields before implementing the writer. A visually monochrome
 24-bit BMP is not acceptable. Use an existing encoder only if it can produce
 the required structure; otherwise implement a small dedicated writer.
 
+Full inspection in task 002 found identical reserved/unused V4 fields in both
+samples: zero file reserved words, planes = 1, colors used/important = 2,
+and zero compression. The value `0x73524742` is at file offset 54 (the red
+mask), **not** at the V4 color-space field (offset 70, zero). The last CIEXYZ
+endpoint component at offset 106 is 2; other masks, endpoints, and gamma
+fields are zero. These are unusual but unused for 1-bit BI_RGB. The dedicated
+writer preserves them pending hardware validation, with 3780 pixels/metre
+resolution, a black/white palette, and zero row padding.
+
+Input limits are 16,384 pixels per side, 32 million pixels total, and a
+256 MiB decoder allocation budget (the allocation budget is best-effort in
+`image`; dimension and pixel-count limits are checked before pixel decoding).
+Fit uses centered white margins and crop removes edges symmetrically before
+Lanczos3 resizing, avoiding large intermediates on extreme aspect ratios.
+
 Source: https://technical.swissmicros.com/dm42/doc/dm42_user_manual.html#off_images
 documents 400×240, 1-bit BMP files in `/OFFIMG/` for DM42/DM42n. This does not
 prove that a generated file works with the R47 community firmware.
