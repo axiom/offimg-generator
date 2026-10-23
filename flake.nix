@@ -28,6 +28,8 @@
           clippy
           rust-analyzer
           pkg-config
+          lld
+          trunk
         ];
 
         buildInputs = guiLibraries;

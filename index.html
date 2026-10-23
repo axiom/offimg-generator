@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#16181d" />
+    <meta name="description" content="Create 400×240 monochrome OFF-images for the SwissMicros R47, privately in your browser." />
+    <title>R47 OFF-image generator</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; background: #16181d; }
+      body { display: grid; place-items: center; }
+      canvas { display: block; width: 100%; height: 100%; outline: none; }
+      #loading { position: fixed; color: #e5e7eb; font: 15px system-ui, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <div id="loading">Loading the image editor…</div>
+    <canvas id="offimg-canvas" aria-label="R47 OFF-image editor"></canvas>
+    <script>
+      const canvas = document.getElementById("offimg-canvas");
+      new ResizeObserver(([entry]) => {
+        const { width, height } = entry.contentRect;
+        const scale = window.devicePixelRatio || 1;
+        canvas.width = Math.round(width * scale);
+        canvas.height = Math.round(height * scale);
+      }).observe(canvas);
+      window.addEventListener("load", () => document.getElementById("loading").remove(), { once: true });
+    </script>
+    <link data-trunk rel="rust" data-bin="offimg-web" />
+  </body>
+</html>

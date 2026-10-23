@@ -187,5 +187,17 @@ not appear, check the host session's desktop portal; cancellation or unavailable
 dialogs leave the current image untouched. CLI-only builds do not enable any
 GUI dependencies.
 
+## Web app
+
+Build the static browser app with `just web`; Trunk writes the deployable site to
+`dist/`. The app uses the same Rust editor and conversion pipeline as the desktop
+GUI. Images stay in the browser and are never uploaded. GitHub Pages deployment
+is configured in `.github/workflows/pages.yml`; enable Pages with **GitHub Actions**
+as its build source. The workflow publishes the repository's default branch.
+
+Browser conversion currently runs on the UI thread, so very large images and the
+DBS algorithm can temporarily make the page unresponsive. Decoder limits are the
+same as the desktop app.
+
 See [the design](docs/design.md) and [tasks](docs/tasks/README.md). Use `jj` to
 commit progress. Keep the two supplied BMP fixtures unchanged.

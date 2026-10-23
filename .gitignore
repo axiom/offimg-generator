@@ -1,5 +1,6 @@
 .direnv
 /target/
+/dist/
 *.bmp
 !/numbers.bmp
 !/numbers2.bmp

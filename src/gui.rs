@@ -1,5 +1,7 @@
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         Arc,
         mpsc::{self, Receiver, TryRecvError},
@@ -9,10 +11,11 @@ use std::{
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use image::{GrayImage, RgbImage};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::export;
 use crate::{
     HEIGHT, Result, WIDTH,
     dither::Algorithm,
-    export,
     mono::MonoImage,
     pipeline::{
         BRIGHTNESS_RANGE, CONTRAST_RANGE, CROP_ZOOM_RANGE, Crop, Framing, GAMMA_RANGE, Settings,
@@ -28,8 +31,18 @@ struct Prepared {
 }
 
 impl Prepared {
+    #[cfg(not(target_arch = "wasm32"))]
     fn open(path: &Path) -> Result<Self> {
-        let source = Arc::new(Source::open(path)?);
+        Self::from_source(Source::open(path)?)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        Self::from_source(Source::decode(std::io::Cursor::new(bytes))?)
+    }
+
+    fn from_source(source: Source) -> Result<Self> {
+        let source = Arc::new(source);
         let fit = source.prepare(Framing::Fit);
         let crop = source.prepare(Framing::Crop);
         let thumbnail = image::imageops::thumbnail(source.image(), WIDTH, HEIGHT);
@@ -55,6 +68,7 @@ struct Pending {
 }
 
 struct Loaded {
+    #[cfg(not(target_arch = "wasm32"))]
     path: PathBuf,
     prepared: Prepared,
     mono: MonoImage,
@@ -85,6 +99,8 @@ pub struct Editor {
     crop: Crop,
     error: Option<String>,
     status: String,
+    #[cfg(target_arch = "wasm32")]
+    web_bridge: std::rc::Rc<std::cell::RefCell<WebBridge>>,
 }
 
 impl Default for Editor {
@@ -100,6 +116,8 @@ impl Default for Editor {
             crop: Crop::default(),
             error: None,
             status: "Open a PNG, JPEG, BMP, or WebP image to begin.".into(),
+            #[cfg(target_arch = "wasm32")]
+            web_bridge: Default::default(),
         }
     }
 }
@@ -108,25 +126,74 @@ fn preview(mono: &MonoImage) -> ColorImage {
     ColorImage::from_gray([WIDTH as usize, HEIGHT as usize], mono.pixels().as_raw())
 }
 
+fn run_task<T: Send + 'static>(
+    name: &'static str,
+    operation: impl FnOnce() -> std::result::Result<T, String> + Send + 'static,
+    ctx: Option<egui::Context>,
+) -> Result<Receiver<std::result::Result<T, String>>> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    #[cfg(not(target_arch = "wasm32"))]
+    std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            let _ = sender.send(operation());
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        })?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = name;
+        let _ = sender.send(operation());
+        if let Some(ctx) = ctx {
+            ctx.request_repaint();
+        }
+    }
+    Ok(receiver)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Default)]
+struct WebBridge {
+    upload: Option<(String, Vec<u8>)>,
+    upload_error: Option<String>,
+    save_result: Option<std::result::Result<String, String>>,
+    picker_open: bool,
+    save_pending: bool,
+}
+
 impl Editor {
+    #[cfg(not(target_arch = "wasm32"))]
     fn open(&mut self, path: &Path, ctx: &egui::Context) -> Result<()> {
+        let worker_path = path.to_path_buf();
+        self.begin_open(
+            path.to_path_buf(),
+            move || Prepared::open(&worker_path).map_err(|error| error.to_string()),
+            ctx,
+        )
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn open_bytes(&mut self, name: String, bytes: Vec<u8>, ctx: &egui::Context) -> Result<()> {
+        self.begin_open(
+            PathBuf::from(name),
+            move || Prepared::decode(&bytes).map_err(|error| error.to_string()),
+            ctx,
+        )
+    }
+
+    fn begin_open(
+        &mut self,
+        path: PathBuf,
+        operation: impl FnOnce() -> std::result::Result<Prepared, String> + Send + 'static,
+        ctx: &egui::Context,
+    ) -> Result<()> {
         if self.pending.is_some() {
             return Err("an image is already loading".into());
         }
-        let (sender, receiver) = mpsc::sync_channel(1);
-        let worker_path = path.to_path_buf();
-        let ctx = ctx.clone();
-        // Dropping the handle detaches: closing the window never joins a decoder.
-        std::thread::Builder::new()
-            .name("image-loader".into())
-            .spawn(move || {
-                let result = Prepared::open(&worker_path).map_err(|error| error.to_string());
-                let _ = sender.send(result);
-                ctx.request_repaint();
-            })?;
         self.pending = Some(Pending {
-            path: path.to_path_buf(),
-            receiver,
+            path: path.clone(),
+            receiver: run_task("image-loader", operation, Some(ctx.clone()))?,
         });
         self.error = None;
         self.status = format!("Loading {}…", path.display());
@@ -176,6 +243,7 @@ impl Editor {
             prepared.source.image().height()
         );
         self.loaded = Some(Loaded {
+            #[cfg(not(target_arch = "wasm32"))]
             path,
             prepared,
             mono,
@@ -237,15 +305,13 @@ impl Editor {
         };
         let settings = self.settings.clone();
         let gray = loaded.prepared.gray(settings.framing).clone();
-        let (sender, receiver) = mpsc::sync_channel(1);
-        std::thread::Builder::new()
-            .name("dbs-renderer".into())
-            .spawn(move || {
-                let _ = sender.send(settings.render(&gray).map_err(|error| error.to_string()));
-            })?;
         self.pending_render = Some(PendingRender {
             revision: self.render_revision,
-            receiver,
+            receiver: run_task(
+                "dbs-renderer",
+                move || settings.render(&gray).map_err(|error| error.to_string()),
+                None,
+            )?,
         });
         self.render_needed = false;
         Ok(())
@@ -324,21 +390,18 @@ impl Editor {
             )?;
             let selection = self.crop;
             let source = Arc::clone(&loaded.prepared.source);
-            let (sender, receiver) = mpsc::sync_channel(1);
-            let ctx = ctx.clone();
             // No request queue: while this runs, the UI only retains the latest selection.
-            std::thread::Builder::new()
-                .name("crop-preparer".into())
-                .spawn(move || {
-                    let result = source
-                        .prepare_crop(selection)
-                        .map_err(|error| error.to_string());
-                    let _ = sender.send(result);
-                    ctx.request_repaint();
-                })?;
             loaded.pending_crop = Some(PendingCrop {
                 selection,
-                receiver,
+                receiver: run_task(
+                    "crop-preparer",
+                    move || {
+                        source
+                            .prepare_crop(selection)
+                            .map_err(|error| error.to_string())
+                    },
+                    Some(ctx.clone()),
+                )?,
             });
         }
         if changed {
@@ -347,6 +410,7 @@ impl Editor {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn save_selection(&mut self, selection: Option<&Path>) -> Result<()> {
         let Some(path) = selection else {
             self.status =
@@ -363,6 +427,7 @@ impl Editor {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         if ui
             .add_enabled(
@@ -397,6 +462,108 @@ impl Editor {
             if let Err(error) = self.save_selection(selection.as_deref()) {
                 self.error = Some(format!("Cannot export: {error}"));
             }
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn poll_web(&mut self, ctx: &egui::Context) {
+        let (upload, upload_error, save_result) = {
+            let mut bridge = self.web_bridge.borrow_mut();
+            (
+                bridge.upload.take(),
+                bridge.upload_error.take(),
+                bridge.save_result.take(),
+            )
+        };
+        if let Some(error) = upload_error {
+            self.error = Some(error);
+        }
+        if let Some((name, bytes)) = upload
+            && let Err(error) = self.open_bytes(name.clone(), bytes, ctx)
+        {
+            self.error = Some(format!("Cannot load {name}: {error}"));
+        }
+        if let Some(result) = save_result {
+            self.web_bridge.borrow_mut().save_pending = false;
+            match result {
+                Ok(name) if name == "Export cancelled" => {
+                    self.status = "Export cancelled.".into();
+                }
+                Ok(name) => {
+                    self.error = None;
+                    self.status = format!("Exported {name}");
+                }
+                Err(error) => self.error = Some(format!("Cannot export: {error}")),
+            }
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn toolbar(&mut self, ui: &mut egui::Ui) {
+        let picker_open = self.web_bridge.borrow().picker_open;
+        if ui
+            .add_enabled(
+                self.pending.is_none() && !picker_open,
+                egui::Button::new("Open image…").min_size(egui::vec2(110.0, 32.0)),
+            )
+            .clicked()
+        {
+            self.web_bridge.borrow_mut().picker_open = true;
+            let bridge = self.web_bridge.clone();
+            let ctx = ui.ctx().clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Some(file) = rfd::AsyncFileDialog::new()
+                    .add_filter("Images", &["png", "jpg", "jpeg", "bmp", "webp"])
+                    .pick_file()
+                    .await
+                {
+                    if file.inner().size() > crate::pipeline::MAX_DECODE_BYTES as f64 {
+                        bridge.borrow_mut().upload_error =
+                            Some("Image file exceeds 256 MiB; choose a smaller file.".into());
+                    } else {
+                        let name = file.file_name();
+                        let bytes = file.read().await;
+                        bridge.borrow_mut().upload = Some((name, bytes));
+                    }
+                }
+                bridge.borrow_mut().picker_open = false;
+                ctx.request_repaint();
+            });
+        }
+        let save_pending = self.web_bridge.borrow().save_pending;
+        if ui
+            .add_enabled(
+                self.loaded.is_some() && self.pending.is_none() && !save_pending,
+                egui::Button::new("Export BMP…").min_size(egui::vec2(120.0, 32.0)),
+            )
+            .clicked()
+        {
+            let mono = self.loaded.as_ref().unwrap().mono.clone();
+            self.web_bridge.borrow_mut().save_pending = true;
+            let bridge = self.web_bridge.clone();
+            let ctx = ui.ctx().clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = if let Some(file) = rfd::AsyncFileDialog::new()
+                    .set_file_name("off-image.bmp")
+                    .save_file()
+                    .await
+                {
+                    let name = file.file_name();
+                    let mut bytes = Vec::new();
+                    match crate::bmp::write(&mono, &mut bytes) {
+                        Ok(()) => file
+                            .write(&bytes)
+                            .await
+                            .map(|()| name)
+                            .map_err(|error| error.to_string()),
+                        Err(error) => Err(error.to_string()),
+                    }
+                } else {
+                    Ok("Export cancelled".into())
+                };
+                bridge.borrow_mut().save_result = Some(result);
+                ctx.request_repaint();
+            });
         }
     }
 
@@ -627,6 +794,8 @@ impl Editor {
 
 impl eframe::App for Editor {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        #[cfg(target_arch = "wasm32")]
+        self.poll_web(ctx);
         self.poll_load(ctx);
         let previous = self.settings.clone();
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {

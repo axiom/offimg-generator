@@ -2,6 +2,7 @@
 
 pub mod bmp;
 pub mod dither;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod export;
 #[cfg(feature = "gui")]
 pub mod gui;

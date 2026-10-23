@@ -8,6 +8,10 @@ default:
 gui:
     nix develop --command cargo run --features gui --bin offimg-gui
 
+# Build the static browser app into dist/.
+web:
+    nix develop --command trunk build --release --public-url /
+
 # Convert an image; extra options are passed through, e.g. --fit crop --force.
 convert input output *options:
     nix develop --command cargo run --bin offimg -- convert "$@"

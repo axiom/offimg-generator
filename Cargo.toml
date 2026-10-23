@@ -14,12 +14,22 @@ name = "offimg-gui"
 path = "src/bin/offimg-gui.rs"
 required-features = ["gui"]
 
+[[bin]]
+name = "offimg-web"
+path = "src/bin/offimg-web.rs"
+required-features = ["gui"]
+
 [features]
 gui = ["dep:eframe", "dep:rfd"]
 
 [dependencies]
 eframe = { version = "0.33.3", optional = true, default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
-rfd = { version = "0.17.2", optional = true, default-features = false, features = ["xdg-portal", "wayland"] }
+rfd = { version = "0.17.2", optional = true, default-features = false, features = ["file-handle-inner", "xdg-portal", "wayland"] }
 clap = { version = "4.6.7", features = ["derive"] }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "bmp", "webp"] }
 tempfile = "3.27.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Document", "HtmlCanvasElement", "Window", "console"] }
