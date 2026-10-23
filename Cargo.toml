@@ -5,5 +5,11 @@ edition = "2024"
 rust-version = "1.88"
 description = "400×240 monochrome OFF-images for the SwissMicros R47"
 
+[[bin]]
+name = "offimg"
+path = "src/bin/offimg.rs"
+
 [dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "bmp", "webp"] }
+tempfile = "3.27.0"

@@ -22,6 +22,17 @@ pub enum Algorithm {
     Threshold,
 }
 
+impl std::str::FromStr for Algorithm {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "threshold" => Ok(Self::Threshold),
+            _ => Err("dither must be threshold"),
+        }
+    }
+}
+
 impl Algorithm {
     pub fn apply(self, image: &GrayImage, threshold: u8) -> MonoImage {
         match self {

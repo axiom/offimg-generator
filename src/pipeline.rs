@@ -15,6 +15,18 @@ pub enum Framing {
     Crop,
 }
 
+impl std::str::FromStr for Framing {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        match value {
+            "fit" => Ok(Self::Fit),
+            "crop" => Ok(Self::Crop),
+            _ => Err("framing must be fit or crop"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub framing: Framing,

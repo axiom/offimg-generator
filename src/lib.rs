@@ -2,6 +2,7 @@
 
 pub mod bmp;
 pub mod dither;
+pub mod export;
 pub mod mono;
 pub mod pipeline;
 
