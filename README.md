@@ -9,25 +9,28 @@ GUI are implemented. Desktop and hardware verification status is in the tasks.
 
 ```sh
 nix develop
-opencode
+just        # list available commands
+just gui    # open the desktop editor
 ```
 
-Exit the current OpenCode session before restarting it from the shell above.
-Then ask: “Read `docs/design.md` and `docs/tasks/README.md`, then continue the
-first unfinished task.”
+The `justfile` wraps the Rust commands below; every recipe uses the locked Nix
+environment. Start with `nix develop` to get `just`, or use
+`nix develop --command just <recipe>` without entering a shell. Direnv users
+can run `direnv allow` after changes to the development environment.
 
-The locked shell targets x86_64 Linux and supplies Rust, Cargo, rustfmt, Clippy,
+The locked shell targets x86_64 Linux and supplies just, Rust, Cargo, rustfmt, Clippy,
 rust-analyzer, compiler/linker tooling, and Wayland/X11/OpenGL libraries.
 The GUI also needs working host graphics drivers and a desktop portal for file
 dialogs. The shell provides the runtime libraries; it does not configure your
 desktop or calculator.
 
-Run library tests and checks with:
+Common development commands:
 
 ```sh
-nix develop --command cargo test
-nix develop --command cargo fmt --check
-nix develop --command cargo clippy --all-targets --all-features -- -D warnings
+just check  # formatting, Clippy, and all tests
+just test   # all tests, without opening a window
+just fmt    # apply Rust formatting
+just build  # build the CLI without GUI dependencies
 ```
 
 The core accepts PNG, JPEG, BMP, and WebP, applies orientation and white alpha
@@ -37,9 +40,9 @@ compatibility has not been verified.
 ## Command line
 
 ```sh
-nix develop --command cargo run --bin offimg -- convert photo.jpg off-image.bmp
-nix develop --command cargo run --bin offimg -- convert photo.png off-image.bmp --fit crop --dither bayer --gamma 1.4 --force
-nix develop --command cargo run --bin offimg -- convert --help
+just convert photo.jpg off-image.bmp
+just convert photo.png off-image.bmp --fit crop --dither bayer --gamma 1.4 --force
+just cli convert --help
 ```
 
 Fit (the default) preserves the whole image with white margins; crop fills the
@@ -70,7 +73,7 @@ grayscale, never from a previously adjusted result. Non-finite values are reject
 ## Desktop GUI
 
 ```sh
-nix develop --command cargo run --features gui --bin offimg-gui
+just gui
 ```
 
 Use **Open…** to select an image, adjust framing/dithering/tone, then **Export

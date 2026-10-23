@@ -126,6 +126,11 @@ loading. Source thumbnails are bounded to 400×240, while result textures use
 the exact export buffer. Integer zoom is measured in physical pixels so
 desktop UI scaling does not introduce fractional preview scaling.
 
+The development shell includes `just`. The `justfile` wraps common commands
+in `nix develop --command`, so `just gui`, `just convert INPUT OUTPUT`, and
+`just check` do not require remembering Cargo flags. Arguments are passed
+positionally to preserve spaces and shell characters in image paths.
+
 Once the Cargo package exists:
 
 ```sh
