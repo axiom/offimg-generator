@@ -23,19 +23,34 @@ source data, and pixel-for-pixel preview/export agreement.
 
 ## Acceptance
 
-- [ ] Source/crop editor appears above the monochrome export preview.
-- [ ] Startup and Reset controls select 2× preview magnification; 1× and 3×
+- [x] Source/crop editor appears above the monochrome export preview.
+- [x] Startup and Reset controls select 2× preview magnification; 1× and 3×
       remain selectable, and preview zoom never changes exported pixels.
-- [ ] Both views remain reachable by scrolling in a smaller window and at
+- [x] Both views remain reachable by scrolling in a smaller window and at
       1×/2×/3× preview zoom, without clipping controls or distorting images.
-- [ ] Crop dragging/wheel zoom still works without unintended page scrolling
+- [x] Crop dragging/wheel zoom still works without unintended page scrolling
       when task 009 is present.
 - [ ] Visually checked on KDE Wayland; `just check` passes.
 
 ## Progress / handoff
 
-Not started. Planning only. The current preview cards are arranged using
-`ui.horizontal_top` inside `egui::ScrollArea::both()` in `src/gui.rs`.
-The user also requested a 2× default preview: update both `Editor::default`
-and Reset controls (currently 1×), cover startup/reset in GUI-state tests,
-and update the GUI usage documentation when implemented.
+Implemented in `src/gui.rs`: vertically stacked labeled cards inside the existing
+two-axis scroll area, with the controls sidebar unchanged. Startup and Reset
+controls now use 2× display magnification; crop reset remains centered at 1×.
+Updated GUI usage and design documentation.
+
+Verified with headless egui tests: source above result at 1×/2×/3×, both Fit and
+Fill, and 1.0/1.5 desktop scale; exact display dimensions; horizontal/vertical
+overflow scrolling in a 300×200 view; unchanged preview/export pixels. The crop
+drag/wheel regression now exercises the actual stacked view and checks that
+only wheel events outside the crop frame scroll the page. Existing GUI-state
+tests cover 2× startup/reset and independent crop reset.
+
+Commands run: `nix develop --command cargo test --all-features gui::tests::`,
+`nix develop --command cargo fmt`, and `just check` (passed: formatting, Clippy,
+33 tests; two existing manual timing tests ignored).
+
+Remaining: run `just gui` on KDE Wayland and visually check both images and the
+sidebar in a smaller window at 1×/2×/3×, including scrolling and Fill drag/wheel
+interaction. Headless tests do not replace that desktop check. Once confirmed,
+check the final acceptance item and move this task to `done/`.

@@ -85,7 +85,7 @@ impl Default for Editor {
             settings: Settings::default(),
             loaded: None,
             pending: None,
-            zoom: 1,
+            zoom: 2,
             crop: Crop::default(),
             error: None,
             status: "Open a PNG, JPEG, BMP, or WebP image to begin.".into(),
@@ -199,7 +199,7 @@ impl Editor {
 
     fn reset(&mut self) {
         self.settings = Settings::default();
-        self.zoom = 1;
+        self.zoom = 2;
         self.crop = Crop::default();
     }
 
@@ -388,6 +388,41 @@ impl Editor {
         });
     }
 
+    fn preview_views(&mut self, ui: &mut egui::Ui) -> egui::scroll_area::ScrollAreaOutput<()> {
+        // Integer physical-pixel zoom, independent of the desktop's UI scaling.
+        let scale = self.zoom as f32 / ui.ctx().pixels_per_point();
+        egui::ScrollArea::both().show(ui, |ui| {
+            ui.vertical(|ui| {
+                egui::Frame::group(ui.style())
+                    .inner_margin(12.0)
+                    .show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            ui.strong("Source / crop editor");
+                            ui.add_space(8.0);
+                            self.source_view(ui, scale);
+                        });
+                    });
+                egui::Frame::group(ui.style())
+                    .inner_margin(12.0)
+                    .show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            ui.strong("400 × 240 · export preview");
+                            ui.add_space(8.0);
+                            let loaded = self.loaded.as_ref().unwrap();
+                            ui.image((
+                                loaded.result_texture.id(),
+                                loaded.result_texture.size_vec2() * scale,
+                            ));
+                            if self.crop_updating() {
+                                ui.spinner();
+                                ui.label("Updating crop… Export uses the displayed preview.");
+                            }
+                        });
+                    });
+            });
+        })
+    }
+
     fn source_view(&mut self, ui: &mut egui::Ui, scale: f32) {
         let Some(loaded) = &self.loaded else { return };
         if self.settings.framing == Framing::Fit {
@@ -528,40 +563,7 @@ impl eframe::App for Editor {
             self.zoom_control(ui);
             ui.add_space(16.0);
             if self.loaded.is_some() {
-                // Integer physical-pixel zoom, independent of the desktop's UI scaling.
-                let scale = self.zoom as f32 / ctx.pixels_per_point();
-                egui::ScrollArea::both().show(ui, |ui| {
-                    ui.horizontal_top(|ui| {
-                        egui::Frame::group(ui.style())
-                            .inner_margin(12.0)
-                            .show(ui, |ui| {
-                                ui.vertical(|ui| {
-                                    ui.strong("Source / crop editor");
-                                    ui.add_space(8.0);
-                                    self.source_view(ui, scale);
-                                });
-                            });
-                        egui::Frame::group(ui.style())
-                            .inner_margin(12.0)
-                            .show(ui, |ui| {
-                                ui.vertical(|ui| {
-                                    ui.strong("400 × 240 · export preview");
-                                    ui.add_space(8.0);
-                                    let loaded = self.loaded.as_ref().unwrap();
-                                    ui.image((
-                                        loaded.result_texture.id(),
-                                        loaded.result_texture.size_vec2() * scale,
-                                    ));
-                                    if self.crop_updating() {
-                                        ui.spinner();
-                                        ui.label(
-                                            "Updating crop… Export uses the displayed preview.",
-                                        );
-                                    }
-                                });
-                            });
-                    });
-                });
+                self.preview_views(ui);
             } else {
                 ui.centered_and_justified(|ui| {
                     ui.label("Open an image to create your calculator's OFF screen.");
@@ -608,6 +610,94 @@ mod tests {
     }
 
     #[test]
+    fn previews_stack_at_integer_zoom_and_scroll_without_changing_export() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.bmp");
+        let output = directory.path().join("output.bmp");
+        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        for pixels_per_point in [1.0, 1.5] {
+            for zoom in 1..=3 {
+                for framing in [Framing::Fit, Framing::Crop] {
+                    let ctx = egui::Context::default();
+                    ctx.set_pixels_per_point(pixels_per_point);
+                    let mut editor = Editor::default();
+                    load(&mut editor, &input, &ctx);
+                    editor.zoom = zoom;
+                    editor.settings.framing = framing;
+                    let pixels = editor.loaded.as_ref().unwrap().mono.clone();
+                    let mut view = None;
+                    let mut frame = |size, events| {
+                        ctx.run(
+                            egui::RawInput {
+                                screen_rect: Some(egui::Rect::from_min_size(
+                                    egui::Pos2::ZERO,
+                                    size,
+                                )),
+                                events,
+                                ..Default::default()
+                            },
+                            |ctx| {
+                                egui::CentralPanel::default().show(ctx, |ui| {
+                                    view = Some(editor.preview_views(ui));
+                                });
+                            },
+                        )
+                    };
+                    let large = egui::vec2(2000.0, 2000.0);
+                    frame(large, vec![]);
+                    let rendered = frame(large, vec![]);
+                    let images: Vec<_> = rendered
+                        .shapes
+                        .iter()
+                        .filter_map(|shape| match &shape.shape {
+                            egui::Shape::Rect(rect)
+                                if rect.fill_texture_id() != egui::TextureId::default() =>
+                            {
+                                Some(rect.rect)
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    assert_eq!(images.len(), 2);
+                    let expected =
+                        egui::vec2(WIDTH as f32, HEIGHT as f32) * (zoom as f32 / pixels_per_point);
+                    for rect in &images {
+                        assert!((rect.size() - expected).length() < 1.0);
+                    }
+                    assert!(images[0].bottom() < images[1].top());
+                    assert_eq!(images[0].left(), images[1].left());
+
+                    let small = egui::vec2(300.0, 200.0);
+                    frame(small, vec![]);
+                    frame(
+                        small,
+                        vec![
+                            // Over the card label, not the wheel-zoom crop frame.
+                            egui::Event::PointerMoved(egui::pos2(30.0, 25.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Point,
+                                delta: egui::vec2(-2000.0, -2000.0),
+                                modifiers: egui::Modifiers::NONE,
+                            },
+                        ],
+                    );
+                    let view = view.unwrap();
+                    assert!(view.content_size.x >= expected.x);
+                    assert!(view.content_size.y >= expected.y * 2.0);
+                    assert!(view.state.offset.y > 0.0);
+                    if expected.x > view.inner_rect.width() {
+                        assert!(view.state.offset.x > 0.0);
+                    }
+                    assert_eq!(editor.crop, Crop::default());
+                    assert_eq!(editor.loaded.as_ref().unwrap().mono, pixels);
+                    editor.save_selection(Some(&output)).unwrap();
+                    assert_eq!(&image::open(&output).unwrap().into_luma8(), pixels.pixels());
+                }
+            }
+        }
+    }
+
+    #[test]
     fn crop_editor_drag_and_wheel_do_not_scroll_the_surrounding_view() {
         fn frame(editor: &mut Editor, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::Vec2 {
             let mut offset = egui::Vec2::ZERO;
@@ -622,13 +712,7 @@ mod tests {
                 },
                 |ctx| {
                     egui::CentralPanel::default().show(ctx, |ui| {
-                        offset = egui::ScrollArea::both()
-                            .show(ui, |ui| {
-                                editor.source_view(ui, 1.0);
-                                ui.allocate_space(egui::vec2(1000.0, 1000.0));
-                            })
-                            .state
-                            .offset;
+                        offset = editor.preview_views(ui).state.offset;
                     });
                 },
             );
@@ -641,6 +725,7 @@ mod tests {
         let mut editor = Editor::default();
         load(&mut editor, &input, &ctx);
         editor.settings.framing = Framing::Crop;
+        editor.zoom = 1;
         editor.crop.zoom = 2.0;
         frame(
             &mut editor,
@@ -686,7 +771,7 @@ mod tests {
                     pressed: false,
                     modifiers: egui::Modifiers::NONE,
                 },
-                egui::Event::PointerMoved(egui::pos2(500.0, 300.0)),
+                egui::Event::PointerMoved(egui::pos2(100.0, 320.0)),
             ],
         );
         let zoom = editor.crop.zoom;
@@ -865,7 +950,7 @@ mod tests {
         let input = directory.path().join("input.bmp");
         std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
         let mut editor = Editor::default();
-        assert_eq!(editor.zoom, 1);
+        assert_eq!(editor.zoom, 2);
         load(&mut editor, &input, &ctx);
         editor.crop = Crop {
             center_x: 0.4,
@@ -898,7 +983,7 @@ mod tests {
         editor.reset();
         editor.refresh(&before).unwrap();
         assert_eq!(editor.settings, Settings::default());
-        assert_eq!(editor.zoom, 1);
+        assert_eq!(editor.zoom, 2);
         assert_eq!(editor.crop, Crop::default());
         let loaded = editor.loaded.as_ref().unwrap();
         assert_eq!(

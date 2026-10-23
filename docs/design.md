@@ -119,12 +119,12 @@ The user confirmed cropping/zooming, the updated slider-free UI, and responsiven
 with a large image, completing task 009's desktop checks. Exact image dimensions
 were not recorded; calculator hardware compatibility remains unverified.
 
-Task 010 will stack the source/crop editor above the monochrome export preview,
-rather than side by side, to better fit the landscape images within the window.
-Keep the controls sidebar, integer preview zoom, and scrolling for overflow.
-Default display magnification to 2× on startup and reset, retaining 1×/2×/3×
+The source/crop editor is stacked above the monochrome export preview to better
+fit the landscape images within the window. The controls sidebar stays separate;
+both preview axes scroll on overflow without shrinking images to fit.
+Display magnification defaults to 2× on startup and reset, retaining 1×/2×/3×
 choices independently of crop zoom (which resets to centered 1×).
-This layout change is planned, not implemented.
+Task 010's KDE Wayland visual check remains pending.
 
 ## BMP findings
 

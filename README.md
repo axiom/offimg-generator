@@ -86,13 +86,15 @@ as the largest centered crop; zoom keeps its center unless clamped at an edge.
 Selections stay inside the oriented original, rounded to whole source pixels
 (at least one per axis, even for tiny images).
 
-The source/crop editor uses a thumbnail as a framing guide; the separate result
+The source/crop editor sits above the export preview and uses a thumbnail as a
+framing guide; the result
 shows the exact 400×240 export buffer, resampled from the full-resolution original.
 **Preview zoom** (1×/2×/3× physical pixels, nearest-neighbor) only magnifies the
-views; it never changes exported content. Scroll to reach larger previews.
+views; it defaults to 2× and never changes exported content. Scroll vertically
+or horizontally to reach views larger than the window; images do not shrink to fit.
 Fit/Fill toggling retains the crop and tone settings. A new image centers crop
 zoom at 1×; **Reset controls** also restores the CLI's tone/framing defaults and
-1× preview magnification. Failed loads keep the previous image; errors stay
+2× preview magnification. Failed loads keep the previous image; errors stay
 visible. On the supported KDE Wayland desktop portal, existing destinations
 require only the native save dialog's replacement confirmation; there is no
 second in-app prompt. Cancellation writes nothing, and the source image and
