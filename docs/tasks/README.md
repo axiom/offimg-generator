@@ -27,13 +27,13 @@ Order:
 8. [009 — Interactive image crop and zoom](done/009-interactive-crop-and-zoom.md).
 9. [010 — Stack source and preview vertically](done/010-vertical-preview-layout.md).
 10. [006 — R47 hardware validation](todo/006-r47-validation.md).
-11. [011 — Additional monochrome dithering algorithms](todo/011-additional-dithering-algorithms.md).
-12. [012 — Five more dithering algorithms](todo/012-five-more-dithering-algorithms.md).
-13. [013 — Adaptive/optimized conversion and sharpening](todo/013-adaptive-optimized-conversion.md).
+11. [011 — Additional monochrome dithering algorithms](done/011-additional-dithering-algorithms.md).
+12. [012 — Five more dithering algorithms](done/012-five-more-dithering-algorithms.md).
+13. [013 — Adaptive/optimized conversion and sharpening](done/013-adaptive-optimized-conversion.md).
 
 Hardware validation can also be performed independently after 005 when the
 user and calculator are available; it need not wait for all GUI follow-ups.
-Tasks 011–013 can also be implemented independently while hardware is unavailable.
+Tasks 011–013 do not establish hardware compatibility; that remains task 006.
 
 To resume: “Read `docs/design.md` and `docs/tasks/README.md`, then continue the
 first unfinished task.” No task runner or OpenCode-specific integration needed.

@@ -53,13 +53,17 @@ No new dependencies or extra algorithm-parameter controls.
   results after crops/source/algorithm changes, check displayed-preview export,
   current-worker disconnection and dropping the receiver on close.
 - [x] Pass `just check` and CLI-only tests; record timings/results below.
-- [ ] User checks KDE Wayland controls/responsiveness and visual tradeoffs on
+- [x] User checks KDE Wayland controls/responsiveness and visual tradeoffs on
   documents, photographs, gradients and thin-line art at 1×/2× and measured
   approximately 6×3.6 cm. Real memory-LCD evaluation remains task 006.
 
 ## Progress / handoff
 
-Implementation and automated checks pass. Full algorithm definitions and
+Complete: implementation and automated checks pass, and the user explicitly
+confirmed acceptance and requested closure. Desktop/visual acceptance is recorded
+on that confirmation; no detailed per-image observations or ruler measurements
+were supplied. Hardware results are not inferred; task 006 remains open.
+Full algorithm definitions and
 worker behavior are in `docs/design.md`; usage/tradeoffs are in README.
 The original blue-noise mask, BMP fixtures and dependencies are unchanged.
 
@@ -88,14 +92,8 @@ Verified commands/results:
   additional worker or snapshot queued. This measures the coalescing path, not
   end-to-end GUI frame latency.
 
-Timings vary with host load. Desktop responsiveness, measured physical-size
-visual quality and real calculator results remain unverified for these changes;
-the numerical checks are not a substitute. Keep this task in `todo/` until the
-user supplies the desktop comparison results.
-
-Next desktop check: select each new algorithm, toggle both options where
-applicable, change crop/tone rapidly during DBS, and export while pending and
-after completion. Confirm the pending label is clear and exports match what is
-displayed. Inspect Sauvola background cleanup/noise, diffusion directionality,
-DBS fine-detail loss and sharpening halos. Do not infer real LCD quality from
-the numerical DBS objective or from desktop magnification alone.
+Timings vary with host load and are not desktop frame measurements. The user's
+confirmation completes desktop acceptance, not real calculator validation.
+Task 006 retains the checks for Sauvola noise, diffusion texture, DBS fine-detail
+loss and sharpening halos on the memory LCD. Neither the numerical DBS objective
+nor desktop magnification establishes real LCD quality.

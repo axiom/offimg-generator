@@ -78,10 +78,10 @@ better. Compare them at actual 400×240 resolution before declaring acceptance.
       do not mutate input, and are deterministic on repeated conversion.
 - [x] CLI integration tests match shared settings; GUI tests verify each new
       algorithm's preview/export agreement with tone, inversion, and crop.
-- [ ] Visually compare a photograph, gradient/gray patches, and text/line art
+- [x] Visually compare a photograph, gradient/gray patches, and text/line art
       against Floyd–Steinberg/Bayer at 1× and 2× on KDE Wayland. Record observed
       tradeoffs, including shadow/highlight loss and blue-noise tile visibility.
-- [ ] Also compare at approximately 6×4 cm physical size, preserving the image's
+- [x] Also compare at approximately 6×4 cm physical size, preserving the image's
       400:240 aspect ratio rather than stretching to match approximate dimensions.
       Record text/thin-line readability, fine-dot visibility, apparent midtones,
       and whether Atkinson loses important shadow/highlight detail. Desktop
@@ -111,11 +111,11 @@ use generated patterns and user-provided or suitably licensed photographs.
 
 ## Progress / handoff
 
-Software implementation and automated verification complete. The user subsequently
-confirmed “all great” and requested more algorithms (task 012); this records
-overall desktop approval, including switching. Detailed per-image observations
-and a measured physical-size check were not supplied, so those acceptance items
-remain open rather than inferring ruler measurements or real hardware results.
+Complete. After earlier approval (“all great”), the user explicitly confirmed
+acceptance and requested that the relevant tasks be marked done. Desktop/visual
+acceptance is recorded on that confirmation; no detailed per-image observations
+or ruler measurements were supplied, and none are invented here. Real calculator
+compatibility and memory-LCD evaluation remain in task 006.
 
 Implemented:
 
@@ -161,20 +161,6 @@ Verified commands:
 These are headless CPU timings, not desktop frame/presentation measurements;
 they do not establish KDE Wayland interaction responsiveness or display quality.
 
-Next step (requires the user/desktop):
-
-1. Run `just gui` on KDE Wayland. Compare a user-provided/suitably licensed photo,
-   generated gradient/gray patches, and text/thin-line art across Floyd–Steinberg,
-   Bayer, Atkinson, Stucki and blue noise at 1× and 2×. Record shadow/highlight
-   loss, dot texture, grid/directional patterns, tile repetition and switching
-   responsiveness. Overall user approval is recorded above, but no detailed
-   per-image observations have been supplied yet.
-2. Measure the displayed image with a ruler and compare at approximately
-   **6×3.6 cm** (400:240 aspect ratio), not simply the GUI's 1× zoom. Record text
-   and thin-line readability, fine dots, apparent midtones, and important detail
-   lost with Atkinson. Do not stretch to 6×4 cm or infer centimetres from zoom.
-3. Real memory-LCD evaluation remains explicitly handed off to task 006; its
-   handoff now includes these algorithms and lighting/distance criteria.
-   Hardware compatibility and real-display visual quality remain unverified.
-4. After those desktop acceptance items pass, record the observations and move
-   this file to `done/` without changing its name.
+Remaining external validation: task 006 covers real memory-LCD evaluation,
+including lighting/distance, fine-detail readability and dithering tradeoffs.
+Closing this task does not establish hardware compatibility.

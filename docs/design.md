@@ -76,9 +76,9 @@ provenance, SHA-256 checksums, and license are in `assets/blue-noise/`.
 Thresholds are centered at `(byte + 0.5) * 255 / 256` and repeat at fixed output
 coordinates, with no runtime generation. Existing algorithm names,
 Floyd–Steinberg default, tone pipeline, and output remain unchanged. These
-additions received the user's overall approval; detailed per-image observations
-and measured physical-size comparisons remain unrecorded. Memory-LCD evaluation
-is handed off to task 006.
+additions received the user's confirmation closing tasks 011–013. Desktop/visual
+acceptance is recorded on that confirmation, without inventing detailed per-image
+observations or ruler measurements. Memory-LCD evaluation remains task 006.
 
 Atkinson scans left-to-right/top-to-bottom, sending 1/8 of the error to
 `(1,0), (2,0), (-1,1), (0,1), (1,1), (0,2)`, intentionally losing 1/4.

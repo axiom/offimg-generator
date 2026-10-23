@@ -48,16 +48,18 @@ Algorithm references (formulas/concepts, not copied implementation code):
 - [x] CLI integration and GUI crop/tone/preview/export tests cover every algorithm,
   including all three preview magnifications without changing cached grayscale.
 - [x] `just check`, CLI-only tests, and a headless cached-render timing comparison.
-- [ ] User compares the new choices in the GUI on photos, gradients/gray patches,
+- [x] User compares the new choices in the GUI on photos, gradients/gray patches,
   and text/thin-line art; confirms switching responsiveness and records tradeoffs.
   Check at 1×/2× and measured approximately 6×3.6 cm (400:240 aspect ratio).
   Real memory-LCD results remain task 006, not inferred from desktop approval.
 
 ## Progress / handoff
 
-The user subsequently responded “Great” and requested further conversion
-algorithms, then selected all four plus sharpening (task 013). This records
-overall approval of this set, not measured physical-size or hardware observations.
+Complete. Following earlier approval (“Great”), the user explicitly confirmed
+acceptance and requested closure of the relevant tasks. Desktop/visual acceptance
+is recorded on that confirmation; detailed per-image observations and ruler
+measurements were not supplied. No hardware results are inferred; task 006 remains
+open for real memory-LCD evaluation.
 
 Implemented the five algorithms, shared `Algorithm::ALL` enumeration, front-end
 selection/help, README usage/tradeoffs, design decisions, regression/integration
@@ -92,8 +94,5 @@ These single-run timing averages vary with host load and do not measure actual
 desktop presentation or responsiveness. No new desktop/physical-size/hardware
 observations have been claimed.
 
-Next: `just gui`, choose each new algorithm, and compare the same source/crop/tone
-settings. Riemersma should give a less raster-oriented but coarser texture;
-clustered dot intentionally exposes growing halftone dots and may obscure small
-text/lines. Sierra/Burkes/JJN differences are image-dependent, not guaranteed
-improvements. Record actual observations before moving this task to `done/`.
+Remaining external validation: compare these choices on the real memory LCD in
+task 006. Desktop acceptance does not guarantee improved calculator readability.

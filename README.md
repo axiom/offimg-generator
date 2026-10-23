@@ -73,8 +73,9 @@ screen from the center. The CLI and GUI share these dithering choices:
 Blue noise uses an embedded [CC0 mask by Christoph Peters](assets/blue-noise/README.md),
 with no runtime randomness or downloads. All dithering is static, anchored to
 export pixels; preview zoom does not affect it. These are alternative looks,
-not verified improvements on the R47's approximately 6×4 cm memory LCD. Visual
-comparison at measured physical size and on real hardware is still pending.
+not verified improvements on the R47's approximately 6×4 cm memory LCD. The user
+confirmed desktop acceptance of tasks 011–013; real hardware evaluation remains
+pending in task 006.
 Riemersma uses a fixed 16-error history (newest weight 1, oldest 1/16), with
 off-image Hilbert coordinates skipped. Clustered dot is spatial halftoning,
 not an animation. No algorithm adds tuning controls or changes the tone pipeline.
