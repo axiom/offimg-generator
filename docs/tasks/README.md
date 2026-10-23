@@ -1,7 +1,7 @@
 # Tasks
 
 Read `../design.md` first. Work in the order below. Task IDs stay stable;
-the GUI follow-ups 007–009 take priority over hardware validation 006.
+the GUI follow-ups 007–010 take priority over hardware validation 006.
 Tasks are deliverable-sized handoffs, not function lists.
 
 - Pending tasks live in `todo/`.
@@ -25,7 +25,8 @@ Order:
 6. [007 — Native-only GUI overwrite confirmation](todo/007-native-overwrite-confirmation.md).
 7. [008 — Responsive image loading](todo/008-responsive-image-loading.md).
 8. [009 — Interactive image crop and zoom](todo/009-interactive-crop-and-zoom.md).
-9. [006 — R47 hardware validation](todo/006-r47-validation.md).
+9. [010 — Stack source and preview vertically](todo/010-vertical-preview-layout.md).
+10. [006 — R47 hardware validation](todo/006-r47-validation.md).
 
 Hardware validation can also be performed independently after 005 when the
 user and calculator are available; it need not wait for all GUI follow-ups.

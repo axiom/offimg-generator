@@ -78,6 +78,11 @@ magnification. CLI flags/defaults stay unchanged. Retain selection when toggling
 Fit/Fill; new images and reset restore centered 1×. These controls are planned,
 not implemented; use shared crop math and preserve preview/export agreement.
 
+Task 010 will stack the source/crop editor above the monochrome export preview,
+rather than side by side, to better fit the landscape images within the window.
+Keep the controls sidebar, integer preview zoom, and scrolling for overflow.
+This layout change is planned, not implemented.
+
 ## BMP findings
 
 The supplied `numbers.bmp` and `numbers2.bmp` remain unchanged in the repository
@@ -159,4 +164,5 @@ cargo run --features gui --bin offimg-gui
 Defer saved presets, batch conversion, automatic calculator copying,
 cross-platform releases, and Nix application packaging. Interactive cropping
 is now in scope for task 009, after native-only confirmation and responsive
-loading (007–008); follow this priority order before hardware validation 006.
+loading (007–008). Follow with vertical preview layout (010) before hardware
+validation 006 in the normal priority order.
