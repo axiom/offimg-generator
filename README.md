@@ -19,7 +19,7 @@ environment. Start with `nix develop` to get `just`, or use
 can run `direnv allow` after changes to the development environment.
 
 The locked shell targets x86_64 Linux and supplies just, Rust, Cargo, rustfmt, Clippy,
-rust-analyzer, compiler/linker tooling, and Wayland/X11/OpenGL libraries.
+zizmor, rust-analyzer, compiler/linker tooling, and Wayland/X11/OpenGL libraries.
 The GUI also needs working host graphics drivers and a desktop portal for file
 dialogs. The shell provides the runtime libraries; it does not configure your
 desktop or calculator.
@@ -27,7 +27,7 @@ desktop or calculator.
 Common development commands:
 
 ```sh
-just check  # formatting, Clippy, and all tests
+just check  # formatting, Clippy, all tests, and GitHub Actions workflow audit
 just test   # all tests, without opening a window
 just fmt    # apply Rust formatting
 just build  # build the CLI without GUI dependencies

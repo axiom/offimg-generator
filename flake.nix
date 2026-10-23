@@ -30,6 +30,7 @@
           pkg-config
           lld
           trunk
+          zizmor
         ];
 
         buildInputs = guiLibraries;

@@ -40,5 +40,9 @@ fmt-check:
 clippy:
     nix develop --command cargo clippy --all-targets --all-features -- -D warnings
 
+# Audit GitHub Actions workflows for security issues.
+workflows-check:
+    nix develop --command zizmor .github/workflows
+
 # Run all checks before committing.
-check: fmt-check clippy test
+check: fmt-check clippy test workflows-check
