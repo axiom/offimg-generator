@@ -2,5 +2,5 @@
 /target/
 /dist/
 *.bmp
-!/numbers.bmp
-!/numbers2.bmp
+!/tests/fixtures/
+!/tests/fixtures/*.bmp

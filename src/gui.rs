@@ -901,7 +901,11 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.bmp");
         let output = directory.path().join("output.bmp");
-        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        std::fs::write(
+            &input,
+            include_bytes!("../tests/fixtures/magic-numbers.bmp"),
+        )
+        .unwrap();
         for pixels_per_point in [1.0, 1.5] {
             for zoom in 1..=3 {
                 for framing in [Framing::Fit, Framing::Crop] {
@@ -1008,7 +1012,11 @@ mod tests {
         let ctx = egui::Context::default();
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.bmp");
-        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        std::fs::write(
+            &input,
+            include_bytes!("../tests/fixtures/magic-numbers.bmp"),
+        )
+        .unwrap();
         let mut editor = Editor::default();
         load(&mut editor, &input, &ctx);
         editor.settings.framing = Framing::Crop;
@@ -1095,7 +1103,11 @@ mod tests {
         let ctx = egui::Context::default();
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.bmp");
-        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        std::fs::write(
+            &input,
+            include_bytes!("../tests/fixtures/magic-numbers.bmp"),
+        )
+        .unwrap();
         let mut editor = Editor::default();
         load(&mut editor, &input, &ctx);
         editor.settings.framing = Framing::Crop;
@@ -1235,7 +1247,11 @@ mod tests {
         let ctx = egui::Context::default();
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.bmp");
-        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        std::fs::write(
+            &input,
+            include_bytes!("../tests/fixtures/magic-numbers.bmp"),
+        )
+        .unwrap();
         let mut editor = Editor::default();
         assert_eq!(editor.zoom, 2);
         load(&mut editor, &input, &ctx);
@@ -1595,7 +1611,11 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.bmp");
         let output = directory.path().join("output.bmp");
-        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        std::fs::write(
+            &input,
+            include_bytes!("../tests/fixtures/magic-numbers.bmp"),
+        )
+        .unwrap();
         let mut editor = Editor::default();
         load(&mut editor, &input, &ctx);
         let displayed = editor.loaded.as_ref().unwrap().mono.clone();
@@ -1750,7 +1770,11 @@ mod tests {
         let ctx = egui::Context::default();
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.bmp");
-        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        std::fs::write(
+            &input,
+            include_bytes!("../tests/fixtures/magic-numbers.bmp"),
+        )
+        .unwrap();
         let mut editor = Editor::default();
         load(&mut editor, &input, &ctx);
         let old_texture = editor.loaded.as_ref().unwrap().result_texture.id();
@@ -1791,7 +1815,7 @@ mod tests {
 
         // An oversized real decoder input must follow the same failure/recovery path.
         let oversized = directory.path().join("oversized.bmp");
-        let mut bytes = include_bytes!("../numbers.bmp").to_vec();
+        let mut bytes = include_bytes!("../tests/fixtures/magic-numbers.bmp").to_vec();
         bytes[18..22].copy_from_slice(&(crate::pipeline::MAX_DIMENSION + 1).to_le_bytes());
         std::fs::write(&oversized, bytes).unwrap();
         load(&mut editor, &oversized, &ctx);
@@ -1861,7 +1885,11 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.bmp");
         let output = directory.path().join("output.bmp");
-        fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        fs::write(
+            &input,
+            include_bytes!("../tests/fixtures/magic-numbers.bmp"),
+        )
+        .unwrap();
         fs::write(&output, b"keep this").unwrap();
         let mut editor = Editor::default();
         load(&mut editor, &input, &ctx);
@@ -1886,7 +1914,10 @@ mod tests {
         fs::hard_link(&input, &hard).unwrap();
         for path in [&input, &sym, &hard] {
             assert!(editor.save_selection(Some(path)).is_err());
-            assert_eq!(fs::read(&input).unwrap(), include_bytes!("../numbers.bmp"));
+            assert_eq!(
+                fs::read(&input).unwrap(),
+                include_bytes!("../tests/fixtures/magic-numbers.bmp")
+            );
         }
         assert_eq!(editor.loaded.as_ref().unwrap().mono, mono);
 

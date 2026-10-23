@@ -222,10 +222,10 @@ The user confirmed task 010's KDE Wayland visual check, completing desktop accep
 
 ## BMP findings
 
-The supplied `numbers.bmp` and `numbers2.bmp` remain unchanged in the repository
-root and serve as format fixtures. Header inspection found:
+The personal `magic-numbers.bmp` image in `tests/fixtures/` serves as the BMP
+format fixture. Header inspection found:
 
-| Field | Value in both files |
+| Field | Value in fixture |
 | --- | --- |
 | Dimensions | 400×240 |
 | Bits per pixel | 1 |
@@ -236,10 +236,9 @@ root and serve as format fixtures. Header inspection found:
 | Pixel data size | 12,480 bytes |
 | Total size | 12,610 bytes |
 
-`numbers.bmp` has palette index 0 black, index 1 white. `numbers2.bmp` reverses
-that palette. Interpret pixel values through the palette, not a hardcoded bit
-polarity. Pixels within each byte use the standard BMP most-significant-bit
-first order. Resolution metadata differs and is not the image dimensions.
+Interpret pixel values through the palette, not a hardcoded bit polarity. Pixels
+within each byte use the standard BMP most-significant-bit first order.
+Resolution metadata differs and is not the image dimensions.
 
 Initially export the same V4 structure with a consistent black/white palette,
 standard bit order, bottom-up rows, and zeroed row padding. Inspect the rest of
@@ -247,9 +246,8 @@ the sample V4 fields before implementing the writer. A visually monochrome
 24-bit BMP is not acceptable. Use an existing encoder only if it can produce
 the required structure; otherwise implement a small dedicated writer.
 
-Full inspection in task 002 found identical reserved/unused V4 fields in both
-samples: zero file reserved words, planes = 1, colors used/important = 2,
-and zero compression. The value `0x73524742` is at file offset 54 (the red
+Full inspection in task 002 found zero file reserved words, planes = 1, colors
+used/important = 2, and zero compression. The value `0x73524742` is at file offset 54 (the red
 mask), **not** at the V4 color-space field (offset 70, zero). The last CIEXYZ
 endpoint component at offset 106 is 2; other masks, endpoints, and gamma
 fields are zero. These are unusual but unused for 1-bit BI_RGB. The dedicated

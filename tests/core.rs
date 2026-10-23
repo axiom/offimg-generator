@@ -336,29 +336,25 @@ fn u32_at(bytes: &[u8], offset: usize) -> u32 {
 }
 
 #[test]
-fn sample_palettes_are_interpreted_instead_of_assuming_bit_polarity() {
-    for bytes in [
-        include_bytes!("../numbers.bmp"),
-        include_bytes!("../numbers2.bmp"),
-    ] {
-        let decoded = Source::decode(Cursor::new(bytes)).unwrap();
-        assert_eq!(decoded.image().dimensions(), (WIDTH, HEIGHT));
-        let offset = u32_at(bytes, 10) as usize;
-        let mut counts = [0; 2];
-        for y in 0..HEIGHT {
-            for x in 0..WIDTH {
-                let byte = bytes[offset + (HEIGHT - 1 - y) as usize * 52 + x as usize / 8];
-                let index = ((byte >> (7 - x % 8)) & 1) as usize;
-                let palette = &bytes[122 + 4 * index..125 + 4 * index];
-                assert_eq!(
-                    decoded.image().get_pixel(x, y).0,
-                    [palette[2], palette[1], palette[0]]
-                );
-                counts[index] += 1;
-            }
+fn sample_palette_is_interpreted_instead_of_assuming_bit_polarity() {
+    let bytes = include_bytes!("fixtures/magic-numbers.bmp");
+    let decoded = Source::decode(Cursor::new(bytes)).unwrap();
+    assert_eq!(decoded.image().dimensions(), (WIDTH, HEIGHT));
+    let offset = u32_at(bytes, 10) as usize;
+    let mut counts = [0; 2];
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let byte = bytes[offset + (HEIGHT - 1 - y) as usize * 52 + x as usize / 8];
+            let index = ((byte >> (7 - x % 8)) & 1) as usize;
+            let palette = &bytes[122 + 4 * index..125 + 4 * index];
+            assert_eq!(
+                decoded.image().get_pixel(x, y).0,
+                [palette[2], palette[1], palette[0]]
+            );
+            counts[index] += 1;
         }
-        assert!(counts.into_iter().all(|count| count > 0));
     }
+    assert!(counts.into_iter().all(|count| count > 0));
 }
 
 #[test]

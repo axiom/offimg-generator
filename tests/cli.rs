@@ -72,7 +72,7 @@ fn converts_fixture_without_a_display_and_refuses_unauthorized_overwrite() {
     let directory = tempfile::tempdir().unwrap();
     let input = directory.path().join("input.bmp");
     let output = directory.path().join("output.bmp");
-    fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+    fs::write(&input, include_bytes!("fixtures/magic-numbers.bmp")).unwrap();
     let result = convert(&input, &output, &[]);
     assert!(result.status.success(), "{:?}", result);
     let bytes = fs::read(&output).unwrap();
@@ -81,7 +81,7 @@ fn converts_fixture_without_a_display_and_refuses_unauthorized_overwrite() {
     let decoded = image::load_from_memory_with_format(&bytes, ImageFormat::Bmp)
         .unwrap()
         .into_luma8();
-    let original = image::load_from_memory(include_bytes!("../numbers.bmp"))
+    let original = image::load_from_memory(include_bytes!("fixtures/magic-numbers.bmp"))
         .unwrap()
         .into_luma8();
     assert_eq!(decoded.dimensions(), (WIDTH, HEIGHT));
@@ -92,7 +92,10 @@ fn converts_fixture_without_a_display_and_refuses_unauthorized_overwrite() {
     assert_eq!(fs::read(&output).unwrap(), b"keep this");
     assert!(convert(&input, &output, &["--force"]).status.success());
     assert_eq!(fs::read(&output).unwrap(), bytes);
-    assert_eq!(fs::read(&input).unwrap(), include_bytes!("../numbers.bmp"));
+    assert_eq!(
+        fs::read(&input).unwrap(),
+        include_bytes!("fixtures/magic-numbers.bmp")
+    );
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
 }
 
@@ -100,7 +103,7 @@ fn converts_fixture_without_a_display_and_refuses_unauthorized_overwrite() {
 fn rejects_source_identity_symlinks_hardlinks_and_relative_aliases_even_with_force() {
     let directory = tempfile::tempdir().unwrap();
     let input = directory.path().join("input.bmp");
-    fs::write(&input, include_bytes!("../numbers2.bmp")).unwrap();
+    fs::write(&input, include_bytes!("fixtures/magic-numbers.bmp")).unwrap();
     let sym = directory.path().join("symlink.bmp");
     let hard = directory.path().join("hardlink.bmp");
     symlink(&input, &sym).unwrap();
@@ -113,7 +116,10 @@ fn rejects_source_identity_symlinks_hardlinks_and_relative_aliases_even_with_for
         &directory.path().join("sub/../input.bmp"),
     ] {
         assert_failed(convert(&input, output, &["--force"]), "source image");
-        assert_eq!(fs::read(&input).unwrap(), include_bytes!("../numbers2.bmp"));
+        assert_eq!(
+            fs::read(&input).unwrap(),
+            include_bytes!("fixtures/magic-numbers.bmp")
+        );
     }
 }
 
@@ -141,7 +147,7 @@ fn errors_are_nonzero_and_preserve_files() {
         "cannot load",
     );
 
-    fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+    fs::write(&input, include_bytes!("fixtures/magic-numbers.bmp")).unwrap();
     assert_failed(
         convert(&input, &directory.path().join("absent/output.bmp"), &[]),
         "cannot export",
@@ -158,7 +164,7 @@ fn failed_atomic_export_preserves_destination_and_cleans_up() {
     let directory = tempfile::tempdir().unwrap();
     let input = directory.path().join("input.bmp");
     let output = directory.path().join("output.bmp");
-    fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+    fs::write(&input, include_bytes!("fixtures/magic-numbers.bmp")).unwrap();
     fs::write(&output, b"keep me").unwrap();
     let invalid = offimg_generator::mono::MonoImage::from_fn(1, 1, |_, _| true);
     assert!(offimg_generator::export::save(&invalid, &input, &output, true).is_err());

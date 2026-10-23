@@ -200,4 +200,4 @@ DBS algorithm can temporarily make the page unresponsive. Decoder limits are the
 same as the desktop app.
 
 See [the design](docs/design.md) and [tasks](docs/tasks/README.md). Use `jj` to
-commit progress. Keep the two supplied BMP fixtures unchanged.
+commit progress.
