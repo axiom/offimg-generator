@@ -25,7 +25,7 @@ Order:
 6. [007 — Native-only GUI overwrite confirmation](done/007-native-overwrite-confirmation.md).
 7. [008 — Responsive image loading](done/008-responsive-image-loading.md).
 8. [009 — Interactive image crop and zoom](done/009-interactive-crop-and-zoom.md).
-9. [010 — Stack source and preview vertically](todo/010-vertical-preview-layout.md).
+9. [010 — Stack source and preview vertically](done/010-vertical-preview-layout.md).
 10. [006 — R47 hardware validation](todo/006-r47-validation.md).
 
 Hardware validation can also be performed independently after 005 when the

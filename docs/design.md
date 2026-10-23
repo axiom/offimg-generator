@@ -124,7 +124,7 @@ fit the landscape images within the window. The controls sidebar stays separate;
 both preview axes scroll on overflow without shrinking images to fit.
 Display magnification defaults to 2× on startup and reset, retaining 1×/2×/3×
 choices independently of crop zoom (which resets to centered 1×).
-Task 010's KDE Wayland visual check remains pending.
+The user confirmed task 010's KDE Wayland visual check, completing desktop acceptance.
 
 ## BMP findings
 

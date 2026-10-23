@@ -30,7 +30,7 @@ source data, and pixel-for-pixel preview/export agreement.
       1×/2×/3× preview zoom, without clipping controls or distorting images.
 - [x] Crop dragging/wheel zoom still works without unintended page scrolling
       when task 009 is present.
-- [ ] Visually checked on KDE Wayland; `just check` passes.
+- [x] Visually checked on KDE Wayland; `just check` passes.
 
 ## Progress / handoff
 
@@ -50,7 +50,6 @@ Commands run: `nix develop --command cargo test --all-features gui::tests::`,
 `nix develop --command cargo fmt`, and `just check` (passed: formatting, Clippy,
 33 tests; two existing manual timing tests ignored).
 
-Remaining: run `just gui` on KDE Wayland and visually check both images and the
-sidebar in a smaller window at 1×/2×/3×, including scrolling and Fill drag/wheel
-interaction. Headless tests do not replace that desktop check. Once confirmed,
-check the final acceptance item and move this task to `done/`.
+The user confirmed the KDE Wayland visual check, completing desktop acceptance.
+Task 010 is complete. Next in the normal work order is task 006, R47 hardware
+validation; calculator compatibility remains unverified.
