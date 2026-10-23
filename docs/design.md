@@ -66,12 +66,23 @@ a monochrome image whose API enforces black/white pixels. An enum selects the
 built-in algorithm. Initial algorithms: threshold, Floyd–Steinberg (default),
 and ordered Bayer. No dynamic plugin registry.
 
-Task 011 plans three additional shared CLI/GUI choices: Atkinson for a more
+Task 011 adds three additional shared CLI/GUI choices: Atkinson for a more
 contrasty classic look, Stucki for wider error diffusion, and fixed-mask blue
-noise for an organic texture. Use a single embedded tileable CC0 mask, with
-recorded provenance and no runtime generation. Existing algorithm names,
+noise for an organic texture. A single embedded tileable 64×64 CC0 mask from
+Christoph Peters' `Data/64_64/LDR_LLL1_0.png` red channel is stored as raw bytes;
+provenance, SHA-256 checksums, and license are in `assets/blue-noise/`.
+Thresholds are centered at `(byte + 0.5) * 255 / 256` and repeat at fixed output
+coordinates, with no runtime generation. Existing algorithm names,
 Floyd–Steinberg default, tone pipeline, and output remain unchanged. These
-additions are planned, not implemented; visual comparisons are part of the task.
+additions still need desktop and measured physical-size visual comparisons;
+memory-LCD evaluation is handed off to task 006.
+
+Atkinson scans left-to-right/top-to-bottom, sending 1/8 of the error to
+`(1,0), (2,0), (-1,1), (0,1), (1,1), (0,2)`, intentionally losing 1/4.
+Stucki uses rows `X 8 4 / 2 4 8 4 2 / 1 2 4 2 1`, divided by 42.
+Both use floating-point error, white at `>= 127.5`, and discard out-of-bounds
+contributions without wrapping or renormalizing. The original Floyd–Steinberg
+implementation is unchanged; only the two new kernels share a private loop.
 
 Controls: framing, algorithm, brightness, contrast, gamma (neutral 1.0),
 threshold for the threshold algorithm, inversion, and reset. Specify numeric

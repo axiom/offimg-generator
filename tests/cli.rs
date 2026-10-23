@@ -49,6 +49,9 @@ fn help_explains_arguments_and_defaults() {
         "--dither",
         "default: fit",
         "default: floyd-steinberg",
+        "atkinson",
+        "stucki",
+        "blue-noise",
     ] {
         assert!(help.contains(word), "{help}");
     }
@@ -171,6 +174,9 @@ fn every_cli_control_matches_shared_settings_and_defaults() {
         Algorithm::Threshold,
         Algorithm::FloydSteinberg,
         Algorithm::Bayer,
+        Algorithm::Atkinson,
+        Algorithm::Stucki,
+        Algorithm::BlueNoise,
     ] {
         let settings = Settings {
             framing: Framing::Crop,

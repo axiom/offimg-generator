@@ -42,13 +42,29 @@ compatibility has not been verified.
 ```sh
 just convert photo.jpg off-image.bmp
 just convert photo.png off-image.bmp --fit crop --dither bayer --gamma 1.4 --force
+just convert photo.jpg off-image.bmp --dither blue-noise
 just cli convert --help
 ```
 
 Fit (the default) preserves the whole image with white margins; crop fills the
-screen from the center. Floyd–Steinberg is the default dither; `threshold` and
-4×4 ordered `bayer` are also available. Conversion
-runs without a display server. Existing output needs `--force`; the source,
+screen from the center. The CLI and GUI share these dithering choices:
+
+| `--dither` | GUI label | Look / tradeoff |
+| --- | --- | --- |
+| `floyd-steinberg` (default) | Floyd–Steinberg | Fine error diffusion; can show directional patterns. |
+| `threshold` | Threshold | Hard cutoff; useful for text/line art, loses apparent gray. |
+| `bayer` | Ordered Bayer | Repeating 4×4 ordered grid; regular texture is visible. |
+| `atkinson` | Atkinson | Contrasty classic look; discards a quarter of the error, so faint shadows/highlights can disappear. |
+| `stucki` | Stucki | Wider error diffusion for photos/gradients; more work, not always better. |
+| `blue-noise` | Blue noise | Organic dispersed dots from a fixed 64×64 tile; repetition can still be visible. |
+
+Blue noise uses an embedded [CC0 mask by Christoph Peters](assets/blue-noise/README.md),
+with no runtime randomness or downloads. All dithering is static, anchored to
+export pixels; preview zoom does not affect it. These are alternative looks,
+not verified improvements on the R47's approximately 6×4 cm memory LCD. Visual
+comparison at measured physical size and on real hardware is still pending.
+
+Conversion runs without a display server. Existing output needs `--force`; the source,
 including symlink and hardlink aliases, is always protected. Exports are written
 to a temporary file in the destination directory and atomically installed, so
 conversion/write failures do not truncate existing images. Temporary files are

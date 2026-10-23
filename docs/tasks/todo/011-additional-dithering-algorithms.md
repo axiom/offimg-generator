@@ -68,15 +68,15 @@ better. Compare them at actual 400×240 resolution before declaring acceptance.
 
 ## Acceptance
 
-- [ ] All three algorithms are selectable in both CLI and GUI, with documented
+- [x] All three algorithms are selectable in both CLI and GUI, with documented
       names; old names/defaults/output remain compatible.
-- [ ] Small hand-calculated fixtures verify both diffusion kernels, including
+- [x] Small hand-calculated fixtures verify both diffusion kernels, including
       Atkinson's intentional error loss, edges, narrow images, and no row wrap.
-- [ ] Blue-noise tests verify asset dimensions, threshold endpoints, tiling, and
+- [x] Blue-noise tests verify asset dimensions, threshold endpoints, tiling, and
       deterministic output; checksum, asset provenance and CC0 notice recorded.
-- [ ] All new algorithms produce only black/white, preserve solid black/white,
+- [x] All new algorithms produce only black/white, preserve solid black/white,
       do not mutate input, and are deterministic on repeated conversion.
-- [ ] CLI integration tests match shared settings; GUI tests verify each new
+- [x] CLI integration tests match shared settings; GUI tests verify each new
       algorithm's preview/export agreement with tone, inversion, and crop.
 - [ ] Visually compare a photograph, gradient/gray patches, and text/line art
       against Floyd–Steinberg/Bayer at 1× and 2× on KDE Wayland. Record observed
@@ -111,9 +111,66 @@ use generated patterns and user-provided or suitably licensed photographs.
 
 ## Progress / handoff
 
-Planning only; no algorithm code or assets added. Read the current `src/dither.rs`,
-GUI algorithm list, CLI help, and `tests/controls.rs` / `tests/cli.rs` before
-implementation. Research supports the shortlist, but its visual quality on the
-small memory LCD is not verified. Desktop physical-size comparisons are only a
-proxy; real-display quality and hardware compatibility remain unverified until
-tested on the user's R47 (task 006).
+Software implementation and automated verification complete; keep this task in
+`todo/` until desktop visual/physical-size comparisons and live switching pass.
+
+Implemented:
+
+- `src/dither.rs`: Atkinson/Stucki through one private diffusion loop; original
+  Floyd–Steinberg, Bayer and threshold implementations unchanged. Added enum
+  names/parsing/display, CLI help, and GUI radio choices; defaults unchanged.
+- `assets/blue-noise/mask.bin`: 4096 raw red-channel bytes from
+  `Data/64_64/LDR_LLL1_0.png` in Peters' texture archive. Verified the archive's
+  CC0 notice; retained its notice/legal text and recorded archive/source/mask
+  SHA-256 checksums beside the asset. No dependency or runtime download added.
+- Core tests cover small diffusion fixtures (single pixel, row, column, edges,
+  two future rows, intentional error loss, no wrapping), all-byte centered
+  thresholds, fixed mask distribution/64-pixel tiling, names/defaults, immutable
+  input, binary/deterministic output, and solid endpoints. Non-threshold choices
+  ignore the cutoff. Existing regression tests still pass.
+- CLI integration now compares all six choices with shared crop/tone/inversion
+  settings. Headless GUI tests compare each new choice with a non-centered 2×
+  crop, brightness/contrast/gamma/inversion, decoded BMP, and preview pixels at
+  all three preview magnifications, retaining the grayscale cache.
+- README and design document describe the choices, provenance and tradeoffs.
+  The supplied `numbers.bmp` and `numbers2.bmp` were not changed.
+
+Verified commands:
+
+- `nix develop --command just check`: formatting, all-feature/all-target Clippy
+  with warnings denied, and 37 tests passed (3 manual timing tests ignored).
+- `nix develop --command cargo test --no-default-features`: 27 tests passed.
+- `sha256sum assets/blue-noise/mask.bin`: matches
+  `fe602dd3f05c3d79ef1ff01533923c45a9eede45531251901818250445fbe4b1`.
+- `nix develop --command cargo test --all-features dithering_switch_timings -- --ignored --nocapture --test-threads=1`:
+  passed. Debug build, generated 400×240 gray pattern, cached GUI
+  tone/dither/CPU texture-update path, one warmup and 20 measured renders each:
+
+  | Algorithm | Mean render/texture update |
+  | --- | --- |
+  | Threshold | 7.51 ms |
+  | Floyd–Steinberg | 10.07 ms |
+  | Bayer | 7.72 ms |
+  | Atkinson | 12.80 ms |
+  | Stucki | 17.97 ms |
+  | Blue noise | 7.67 ms |
+
+These are headless CPU timings, not desktop frame/presentation measurements;
+they do not establish KDE Wayland interaction responsiveness or display quality.
+
+Next step (requires the user/desktop):
+
+1. Run `just gui` on KDE Wayland. Compare a user-provided/suitably licensed photo,
+   generated gradient/gray patches, and text/thin-line art across Floyd–Steinberg,
+   Bayer, Atkinson, Stucki and blue noise at 1× and 2×. Record shadow/highlight
+   loss, dot texture, grid/directional patterns, tile repetition and switching
+   responsiveness. No actual visual observations have been recorded yet.
+2. Measure the displayed image with a ruler and compare at approximately
+   **6×3.6 cm** (400:240 aspect ratio), not simply the GUI's 1× zoom. Record text
+   and thin-line readability, fine dots, apparent midtones, and important detail
+   lost with Atkinson. Do not stretch to 6×4 cm or infer centimetres from zoom.
+3. Real memory-LCD evaluation remains explicitly handed off to task 006; its
+   handoff now includes these algorithms and lighting/distance criteria.
+   Hardware compatibility and real-display visual quality remain unverified.
+4. After those desktop acceptance items pass, record the observations and move
+   this file to `done/` without changing its name.

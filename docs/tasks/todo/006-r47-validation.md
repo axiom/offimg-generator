@@ -30,3 +30,12 @@ manual copying.
 The requested GUI follow-ups (007–010) take priority in the normal work order.
 This hardware check can still run independently when the user and calculator
 are available; it does not require interactive cropping or background loading.
+
+Task 011 adds Atkinson, Stucki and fixed-mask blue noise. Its software checks
+do not establish visual quality on the approximately 6×4 cm memory LCD. When
+hardware is available, compare a photograph, gradient/gray patches and text/thin
+line art with Floyd–Steinberg/Bayer at normal handheld viewing distance. Record
+firmware, ambient lighting and viewing distance, text/thin-line readability,
+fine-dot visibility, apparent midtones, Atkinson shadow/highlight loss, and any
+blue-noise tile repetition. Desktop comparisons at a measured physical size are
+only a proxy, not completion of this real-display evaluation.

@@ -343,6 +343,9 @@ impl Editor {
         for (algorithm, label) in [
             (Algorithm::FloydSteinberg, "Floyd–Steinberg"),
             (Algorithm::Bayer, "Ordered Bayer"),
+            (Algorithm::Atkinson, "Atkinson"),
+            (Algorithm::Stucki, "Stucki"),
+            (Algorithm::BlueNoise, "Blue noise"),
             (Algorithm::Threshold, "Threshold"),
         ] {
             ui.radio_value(&mut self.settings.algorithm, algorithm, label);
@@ -1189,6 +1192,96 @@ mod tests {
                 .convert(&Settings::default())
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn new_algorithms_match_crop_tone_preview_and_export_at_every_preview_zoom() {
+        let ctx = egui::Context::default();
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("gradient.png");
+        let output = directory.path().join("output.bmp");
+        RgbImage::from_fn(320, 200, |x, y| {
+            image::Rgb([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        })
+        .save(&input)
+        .unwrap();
+        let mut editor = Editor::default();
+        load(&mut editor, &input, &ctx);
+        editor.settings.framing = Framing::Crop;
+        editor.crop = Crop {
+            center_x: 0.4,
+            center_y: 0.6,
+            zoom: 2.0,
+        };
+        editor.update_crop(&ctx).unwrap();
+        finish_crop(&mut editor, &ctx);
+        let selected = editor
+            .loaded
+            .as_ref()
+            .unwrap()
+            .prepared
+            .source
+            .prepare_crop(editor.crop)
+            .unwrap();
+        let cached = editor.loaded.as_ref().unwrap().prepared.crop.as_ptr();
+        for algorithm in [Algorithm::Atkinson, Algorithm::Stucki, Algorithm::BlueNoise] {
+            let previous = editor.settings.clone();
+            editor.settings.algorithm = algorithm;
+            editor.settings.brightness = -0.1;
+            editor.settings.contrast = 1.3;
+            editor.settings.gamma = 1.7;
+            editor.settings.invert = true;
+            editor.refresh(&previous).unwrap();
+            let expected = editor.settings.render(&selected).unwrap();
+            for zoom in 1..=3 {
+                editor.zoom = zoom;
+                editor.update_crop(&ctx).unwrap();
+                editor.refresh(&editor.settings.clone()).unwrap();
+                editor.save_selection(Some(&output)).unwrap();
+                let loaded = editor.loaded.as_ref().unwrap();
+                assert_eq!(loaded.prepared.crop.as_ptr(), cached);
+                assert_eq!(loaded.mono, expected, "{algorithm}, zoom {zoom}");
+                let decoded = image::open(&output).unwrap().into_luma8();
+                assert_eq!(&decoded, expected.pixels());
+                for (pixel, color) in decoded.pixels().zip(preview(&loaded.mono).pixels) {
+                    assert_eq!(color.to_array(), [pixel[0], pixel[0], pixel[0], 255]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "manual cached 400×240 render/texture timings; no desktop required"]
+    fn dithering_switch_timings() {
+        let ctx = egui::Context::default();
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("gradient.png");
+        RgbImage::from_fn(WIDTH, HEIGHT, |x, y| {
+            image::Rgb([((x * 17 + y * 31) % 256) as u8; 3])
+        })
+        .save(&input)
+        .unwrap();
+        let mut editor = Editor::default();
+        load(&mut editor, &input, &ctx);
+        for algorithm in [
+            Algorithm::Threshold,
+            Algorithm::FloydSteinberg,
+            Algorithm::Bayer,
+            Algorithm::Atkinson,
+            Algorithm::Stucki,
+            Algorithm::BlueNoise,
+        ] {
+            editor.settings.algorithm = algorithm;
+            editor.render_preview().unwrap();
+            let start = std::time::Instant::now();
+            for _ in 0..20 {
+                editor.render_preview().unwrap();
+            }
+            eprintln!(
+                "{algorithm}: {:?} mean cached render/texture (20 runs)",
+                start.elapsed() / 20
+            );
+        }
     }
 
     #[test]
