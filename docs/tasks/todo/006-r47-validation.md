@@ -43,3 +43,8 @@ only a proxy, not completion of this real-display evaluation.
 Task 012 adds Sierra, Burkes, Jarvis–Judice–Ninke, Riemersma and clustered dot.
 Include them in the same comparisons, especially clustered-dot fine-detail loss
 and Riemersma's coarser texture versus the raster diffusion choices.
+
+Task 013 adds Sauvola, Ostromoukhov, bounded DBS, optional serpentine scanning
+and mild output-size sharpening. Check Sauvola on unevenly lit documents, the
+photo/gradient textures, DBS thin-detail softness, and sharpening noise/halos.
+DBS's simple blurred-error model is not calibrated to the physical LCD.

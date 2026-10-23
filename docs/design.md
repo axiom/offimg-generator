@@ -17,6 +17,7 @@ and `offimg-gui`. Keep GUI dependencies optional behind a `gui` feature so a
 CLI-only build does not need the desktop stack. No multi-crate workspace,
 plugin system, or async runtime. The GUI uses detached background loading and
 crop-preparation threads, with at most one request of each kind per editor/source.
+DBS alone also uses a detached, coalescing render worker (one per editor).
 
 Suggested modules: `pipeline`, `dither`, `mono`, and `bmp`. Use `image` for
 decoding and resizing, `clap` for CLI parsing, `eframe`/`egui` for the GUI,
@@ -30,7 +31,8 @@ Both front ends share settings, defaults, validation, and conversion code:
 2. Fit with white margins or crop to 400×240, preserving aspect ratio (centered
    in the CLI, interactive in the GUI).
 3. Convert to grayscale.
-4. Apply brightness, contrast, and gamma adjustments.
+4. Optionally apply fixed mild output-size sharpening, then brightness, contrast,
+   and gamma adjustments.
 5. Dither to black/white.
 6. Optionally invert.
 7. Preview or export the same monochrome buffer.
@@ -46,7 +48,7 @@ repeated resizes without a working-image downsize or any quality/CLI change.
 One detached standard thread decodes, prepares both modes, and creates the
 bounded source thumbnail. A capacity-one channel transfers owned CPU buffers or
 an error message; the worker requests a repaint after sending. Only the UI
-thread renders the small final buffer, creates/updates textures, and replaces
+thread renders the small final buffer (except DBS), creates/updates textures, and replaces
 editor state. Open/export are disabled while a request is pending, so requests
 cannot accumulate or overtake each other. Controls still update the old preview;
 new buffers render with the latest settings, not a stale snapshot. Errors retain
@@ -105,11 +107,55 @@ variant, not simple one-error diffusion along a curve.
 Clustered dot uses rows `12 5 6 13 / 4 0 1 7 / 11 3 2 8 / 15 10 9 14`,
 centered thresholds `(rank + 0.5) * 255 / 16`, and fixed output-pixel tiling.
 The center cluster grows as gray increases, unlike Bayer's dispersed grid.
-All eleven algorithms share framing/tone/inversion and preview/export buffers;
+These eleven algorithms share framing/tone/inversion and preview/export buffers;
 no new dependency, tuning control, output format or default change is introduced.
 
+Task 013 follows the user's selection of all four further capabilities plus
+optional sharpening. New algorithm names are `sauvola`, `ostromoukhov`, and
+`dbs`; `--serpentine` is an opt-in variant of the six fixed-kernel raster
+algorithms, not six more radio choices. Odd rows reverse traversal and every
+horizontal tap; edge error is still discarded without renormalization. The
+original Floyd–Steinberg default path remains unchanged. Unsupported algorithms
+ignore the flag; Ostromoukhov always scans serpentine.
+
+Sauvola uses clipped 15×15 local mean/variance from u64 integral sums, fixed
+`k=0.2, R=128`, and threshold `mean * (1 + k * (stddev/R - 1))`. White is at or
+above threshold, except zero stays black even in a zero-mean window. This targets
+documents, not photographic gray. Ostromoukhov uses 128 mirrored integer
+coefficient triples indexed by original tone-adjusted gray, no propagated-error
+clamping, and the shared 127.5 cutoff. Table provenance, pinned source checksum
+and MIT notice are in `assets/ostromoukhov/`; implementation conventions are
+explicit rather than promising identical pixels to every other implementation.
+
+DBS starts from the unchanged raster Floyd–Steinberg seed, then greedily chooses
+the best improving toggle or opposite-color swap among eight neighbors per pixel
+in left-to-right/top-to-bottom order. At most four sweeps (stop early if unchanged)
+bound work. The objective is full-convolution squared error after a separable
+`[1,2,1]/4` blur, including its halo. Its 5×5 autocorrelation updates the error
+gradient incrementally; f64 calculations accept changes below -1e-12. The method
+is deterministic and approximate, not a globally optimal or LCD-calibrated model.
+
+Optional `--sharpen` / **Mild sharpening** applies
+`round(clamp(gray + 0.5 * (gray - blur(gray)), 0, 255))` with the same 3×3
+binomial blur and clamped borders, on fresh output-size grayscale **before** tone.
+The amount/radius are fixed; sharpening and serpentine default off and reset off.
+Both front ends share the exact settings/pipeline; neither changes source caches.
+
+Only DBS rendering moves off-thread: one capacity-one channel, monotonically
+increasing render revision, one in-flight request and a boolean latest-request
+marker, never a queue. Settings edits, accepted crop buffers and source installs
+advance the revision. Obsolete results cannot replace current pixels, including
+after switching algorithms or replacing a source. A worker owns one 400×240
+grayscale snapshot and settings, not the full source. The UI retains the last
+displayed monochrome buffer; new DBS sources first display their fast
+Floyd–Steinberg seed. **Optimizing DBS…** and **Updating crop…** may both apply;
+export always writes the displayed result. Polling schedules repaints every
+50 ms while a worker is pending; close drops the receiver without joining.
+Worker errors retain displayed pixels and are surfaced without endless retries.
+
 Controls: framing, algorithm, brightness, contrast, gamma (neutral 1.0),
-threshold for the threshold algorithm, inversion, and reset. Specify numeric
+threshold for the threshold algorithm, inversion, optional serpentine/sharpening,
+and reset. Specify numeric
 ranges and adjustment formulas in the shared core, not independently in each
 front end. Other controls default to neutral settings; default framing is fit.
 

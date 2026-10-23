@@ -151,6 +151,8 @@ pub struct Settings {
     pub contrast: f32,
     pub gamma: f32,
     pub invert: bool,
+    pub serpentine: bool,
+    pub sharpen: bool,
 }
 
 impl Default for Settings {
@@ -163,6 +165,8 @@ impl Default for Settings {
             contrast: 1.0,
             gamma: 1.0,
             invert: false,
+            serpentine: false,
+            sharpen: false,
         }
     }
 }
@@ -186,9 +190,16 @@ impl Settings {
         Ok(())
     }
 
-    /// Apply a fresh LUT to cached grayscale; never mutate a previous preview.
+    /// Optionally sharpen, then apply a fresh tone LUT without mutating cached grayscale.
     pub fn adjust(&self, gray: &GrayImage) -> Result<GrayImage> {
         self.validate()?;
+        let sharpened;
+        let gray = if self.sharpen {
+            sharpened = sharpen(gray);
+            &sharpened
+        } else {
+            gray
+        };
         let lut: [u8; 256] = std::array::from_fn(|value| {
             let normalized = value as f32 / 255.0;
             let adjusted =
@@ -201,12 +212,30 @@ impl Settings {
     }
 
     pub fn render(&self, gray: &GrayImage) -> Result<MonoImage> {
-        let mut mono = self.algorithm.apply(&self.adjust(gray)?, self.threshold);
+        let mut mono =
+            self.algorithm
+                .apply_scanned(&self.adjust(gray)?, self.threshold, self.serpentine);
         if self.invert {
             mono.invert();
         }
         Ok(mono)
     }
+}
+
+// Fixed mild unsharp mask at output resolution; clamp borders, never resample.
+fn sharpen(gray: &GrayImage) -> GrayImage {
+    GrayImage::from_fn(gray.width(), gray.height(), |x, y| {
+        let mut blurred = 0.0;
+        for (dy, wy) in [(-1_i64, 1.0), (0, 2.0), (1, 1.0)] {
+            for (dx, wx) in [(-1_i64, 1.0), (0, 2.0), (1, 1.0)] {
+                let nx = (i64::from(x) + dx).clamp(0, i64::from(gray.width()) - 1) as u32;
+                let ny = (i64::from(y) + dy).clamp(0, i64::from(gray.height()) - 1) as u32;
+                blurred += f32::from(gray.get_pixel(nx, ny)[0]) * wx * wy / 16.0;
+            }
+        }
+        let value = f32::from(gray.get_pixel(x, y)[0]);
+        image::Luma([(value + 0.5 * (value - blurred)).round().clamp(0.0, 255.0) as u8])
+    })
 }
 
 /// The oriented, white-composited original; adjustments never mutate it.

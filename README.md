@@ -44,6 +44,9 @@ just convert photo.jpg off-image.bmp
 just convert photo.png off-image.bmp --fit crop --dither bayer --gamma 1.4 --force
 just convert photo.jpg off-image.bmp --dither blue-noise
 just convert photo.jpg off-image.bmp --dither riemersma
+just convert scan.png off-image.bmp --dither sauvola --sharpen
+just convert photo.jpg off-image.bmp --serpentine --sharpen
+just convert photo.jpg off-image.bmp --dither dbs
 just cli convert --help
 ```
 
@@ -63,6 +66,9 @@ screen from the center. The CLI and GUI share these dithering choices:
 | `jarvis-judice-ninke` | Jarvis–Judice–Ninke | Wide three-row diffusion for photos; subtle differences from Stucki, more work per pixel. |
 | `riemersma` | Riemersma | Hilbert-curve diffusion with a short decaying error history; less raster-direction bias, coarser texture and more work. |
 | `clustered-dot` | Clustered dot | Repeating 4×4 growing dot clusters for a newspaper-like texture; can obscure fine detail. |
+| `sauvola` | Sauvola · local threshold | Adaptive threshold for text/diagrams with uneven lighting; removes apparent gray and can amplify noise. |
+| `ostromoukhov` | Ostromoukhov | Gray-dependent diffusion weights and serpentine scan for photos/gradients; different texture, not always better. |
+| `dbs` | DBS · optimized (slower) | Direct binary search improves a blurred-error objective using dot toggles/swaps; slower and can soften fine detail. |
 
 Blue noise uses an embedded [CC0 mask by Christoph Peters](assets/blue-noise/README.md),
 with no runtime randomness or downloads. All dithering is static, anchored to
@@ -72,6 +78,13 @@ comparison at measured physical size and on real hardware is still pending.
 Riemersma uses a fixed 16-error history (newest weight 1, oldest 1/16), with
 off-image Hilbert coordinates skipped. Clustered dot is spatial halftoning,
 not an animation. No algorithm adds tuning controls or changes the tone pipeline.
+
+Sauvola uses clipped 15×15 windows, `k=0.2`, and `R=128`; solid black/white stay
+unchanged. Ostromoukhov uses a fixed [coefficient table with provenance and MIT
+notice](assets/ostromoukhov/README.md) and always scans serpentine. DBS starts
+from Floyd–Steinberg and runs at most four deterministic optimization sweeps
+using a fixed 3×3 perceptual blur. This is a bounded approximation, not a global
+optimum or a calibrated model of the calculator's display.
 
 Conversion runs without a display server. Existing output needs `--force`; the source,
 including symlink and hardlink aliases, is always protected. Exports are written
@@ -88,6 +101,18 @@ Controls (shared defaults and validation):
 | `--gamma` | 0.1 to 4 | 1 |
 | `--threshold` | 0 to 255; threshold algorithm only | 128 |
 | `--invert` | swap output black/white | off |
+| `--serpentine` | alternate scan direction for fixed-kernel raster diffusion | off |
+| `--sharpen` | fixed mild output-size sharpening before tone/dithering | off |
+
+**Serpentine scan** works with Floyd–Steinberg, Atkinson, Stucki, Sierra, Burkes,
+and Jarvis–Judice–Ninke: odd rows run right-to-left with mirrored weights. Other
+choices ignore the flag; Ostromoukhov already scans this way. The GUI disables
+the checkbox where it does not apply while retaining its value.
+
+**Mild sharpening** uses a fixed 3×3 binomial blur and unsharp amount 0.5, with
+clamped borders and byte rounding/clamping. It runs on fresh output-resolution
+grayscale before brightness/contrast/gamma. It may help thin details but can
+amplify noise/halos; it never changes framing, resolution or the cached source.
 
 On normalized grayscale `s`, tone adjustment is
 `255 × clamp((s − 0.5) × contrast + 0.5 + brightness, 0, 1)^(1/gamma)`,
@@ -141,6 +166,17 @@ retained at full resolution; no extra downsizing changes image quality or CLI
 output. Preparing both modes can make the initial wait longer, but closing the
 window does not wait for the loader. The user confirmed that the GUI no longer
 freezes on KDE Wayland (task 008).
+
+DBS optimization also runs off-thread. **Optimizing DBS…** retains the last
+displayed result; export saves those exact pixels, not a pending optimization.
+When a new image loads with DBS selected, its initial displayed result is the
+Floyd–Steinberg starting image until optimization completes. There is at most
+one DBS worker, even across image replacements; edits coalesce to the latest
+settings/crop and stale results are discarded. Other algorithms remain immediate.
+Worker results are polled at 50 ms intervals while pending; closing does not
+wait for optimization. In the debug build, a generated 400×240 gray-pattern
+render/texture update averaged about 172 ms for DBS and 16–17 ms for
+Sauvola/Ostromoukhov (headless CPU measurements, not desktop frame timings).
 
 The optional `gui` feature uses egui/eframe with Glow, Wayland/X11 and
 accessibility support, plus rfd's desktop-portal file dialogs. If a dialog does

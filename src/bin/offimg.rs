@@ -34,7 +34,7 @@ struct Convert {
     #[arg(long, default_value_t = Settings::default().framing)]
     fit: Framing,
     /// Dithering algorithm: threshold, floyd-steinberg, bayer, atkinson, stucki, blue-noise,
-    /// sierra, burkes, jarvis-judice-ninke, riemersma, or clustered-dot
+    /// sierra, burkes, jarvis-judice-ninke, riemersma, clustered-dot, sauvola, ostromoukhov, or dbs
     #[arg(long, default_value_t = Settings::default().algorithm)]
     dither: Algorithm,
     /// Brightness offset (-1 to 1)
@@ -52,6 +52,12 @@ struct Convert {
     /// Swap black and white after dithering
     #[arg(long)]
     invert: bool,
+    /// Alternate raster diffusion direction each row (Ostromoukhov always does this)
+    #[arg(long)]
+    serpentine: bool,
+    /// Apply mild sharpening at output resolution before tone adjustment/dithering
+    #[arg(long)]
+    sharpen: bool,
     /// Replace an existing destination, but never the source
     #[arg(long)]
     force: bool,
@@ -68,6 +74,8 @@ fn run(cli: Cli) -> Result<()> {
                 gamma: args.gamma,
                 threshold: args.threshold,
                 invert: args.invert,
+                serpentine: args.serpentine,
+                sharpen: args.sharpen,
             };
             settings.validate()?;
             let source = Source::open(&args.input)

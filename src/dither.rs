@@ -2,6 +2,13 @@ use image::GrayImage;
 
 use crate::mono::MonoImage;
 
+mod dbs;
+mod ostromoukhov;
+mod sauvola;
+pub use dbs::DirectBinarySearch;
+pub use ostromoukhov::Ostromoukhov;
+pub use sauvola::Sauvola;
+
 pub trait Dither {
     fn dither(&self, image: &GrayImage) -> MonoImage;
 }
@@ -52,125 +59,132 @@ impl Dither for FloydSteinberg {
 
 pub struct Atkinson;
 
+impl Atkinson {
+    // Six eighths intentionally retain only three quarters of the error.
+    const TAPS: &'static [(isize, usize, f32)] = &[
+        (1, 0, 1.0 / 8.0),
+        (2, 0, 1.0 / 8.0),
+        (-1, 1, 1.0 / 8.0),
+        (0, 1, 1.0 / 8.0),
+        (1, 1, 1.0 / 8.0),
+        (0, 2, 1.0 / 8.0),
+    ];
+}
+
 impl Dither for Atkinson {
     fn dither(&self, image: &GrayImage) -> MonoImage {
-        // Six eighths intentionally retain only three quarters of the error.
-        diffuse(
-            image,
-            &[
-                (1, 0, 1.0 / 8.0),
-                (2, 0, 1.0 / 8.0),
-                (-1, 1, 1.0 / 8.0),
-                (0, 1, 1.0 / 8.0),
-                (1, 1, 1.0 / 8.0),
-                (0, 2, 1.0 / 8.0),
-            ],
-        )
+        diffuse(image, Self::TAPS, false)
     }
 }
 
 pub struct Stucki;
 
+impl Stucki {
+    const TAPS: &'static [(isize, usize, f32)] = &[
+        (1, 0, 8.0 / 42.0),
+        (2, 0, 4.0 / 42.0),
+        (-2, 1, 2.0 / 42.0),
+        (-1, 1, 4.0 / 42.0),
+        (0, 1, 8.0 / 42.0),
+        (1, 1, 4.0 / 42.0),
+        (2, 1, 2.0 / 42.0),
+        (-2, 2, 1.0 / 42.0),
+        (-1, 2, 2.0 / 42.0),
+        (0, 2, 4.0 / 42.0),
+        (1, 2, 2.0 / 42.0),
+        (2, 2, 1.0 / 42.0),
+    ];
+}
+
 impl Dither for Stucki {
     fn dither(&self, image: &GrayImage) -> MonoImage {
-        diffuse(
-            image,
-            &[
-                (1, 0, 8.0 / 42.0),
-                (2, 0, 4.0 / 42.0),
-                (-2, 1, 2.0 / 42.0),
-                (-1, 1, 4.0 / 42.0),
-                (0, 1, 8.0 / 42.0),
-                (1, 1, 4.0 / 42.0),
-                (2, 1, 2.0 / 42.0),
-                (-2, 2, 1.0 / 42.0),
-                (-1, 2, 2.0 / 42.0),
-                (0, 2, 4.0 / 42.0),
-                (1, 2, 2.0 / 42.0),
-                (2, 2, 1.0 / 42.0),
-            ],
-        )
+        diffuse(image, Self::TAPS, false)
     }
 }
 
 pub struct Sierra;
 
+impl Sierra {
+    const TAPS: &'static [(isize, usize, f32)] = &[
+        (1, 0, 5.0 / 32.0),
+        (2, 0, 3.0 / 32.0),
+        (-2, 1, 2.0 / 32.0),
+        (-1, 1, 4.0 / 32.0),
+        (0, 1, 5.0 / 32.0),
+        (1, 1, 4.0 / 32.0),
+        (2, 1, 2.0 / 32.0),
+        (-1, 2, 2.0 / 32.0),
+        (0, 2, 3.0 / 32.0),
+        (1, 2, 2.0 / 32.0),
+    ];
+}
+
 impl Dither for Sierra {
     fn dither(&self, image: &GrayImage) -> MonoImage {
-        diffuse(
-            image,
-            &[
-                (1, 0, 5.0 / 32.0),
-                (2, 0, 3.0 / 32.0),
-                (-2, 1, 2.0 / 32.0),
-                (-1, 1, 4.0 / 32.0),
-                (0, 1, 5.0 / 32.0),
-                (1, 1, 4.0 / 32.0),
-                (2, 1, 2.0 / 32.0),
-                (-1, 2, 2.0 / 32.0),
-                (0, 2, 3.0 / 32.0),
-                (1, 2, 2.0 / 32.0),
-            ],
-        )
+        diffuse(image, Self::TAPS, false)
     }
 }
 
 pub struct Burkes;
 
+impl Burkes {
+    const TAPS: &'static [(isize, usize, f32)] = &[
+        (1, 0, 8.0 / 32.0),
+        (2, 0, 4.0 / 32.0),
+        (-2, 1, 2.0 / 32.0),
+        (-1, 1, 4.0 / 32.0),
+        (0, 1, 8.0 / 32.0),
+        (1, 1, 4.0 / 32.0),
+        (2, 1, 2.0 / 32.0),
+    ];
+}
+
 impl Dither for Burkes {
     fn dither(&self, image: &GrayImage) -> MonoImage {
-        diffuse(
-            image,
-            &[
-                (1, 0, 8.0 / 32.0),
-                (2, 0, 4.0 / 32.0),
-                (-2, 1, 2.0 / 32.0),
-                (-1, 1, 4.0 / 32.0),
-                (0, 1, 8.0 / 32.0),
-                (1, 1, 4.0 / 32.0),
-                (2, 1, 2.0 / 32.0),
-            ],
-        )
+        diffuse(image, Self::TAPS, false)
     }
 }
 
 pub struct JarvisJudiceNinke;
 
+impl JarvisJudiceNinke {
+    const TAPS: &'static [(isize, usize, f32)] = &[
+        (1, 0, 7.0 / 48.0),
+        (2, 0, 5.0 / 48.0),
+        (-2, 1, 3.0 / 48.0),
+        (-1, 1, 5.0 / 48.0),
+        (0, 1, 7.0 / 48.0),
+        (1, 1, 5.0 / 48.0),
+        (2, 1, 3.0 / 48.0),
+        (-2, 2, 1.0 / 48.0),
+        (-1, 2, 3.0 / 48.0),
+        (0, 2, 5.0 / 48.0),
+        (1, 2, 3.0 / 48.0),
+        (2, 2, 1.0 / 48.0),
+    ];
+}
+
 impl Dither for JarvisJudiceNinke {
     fn dither(&self, image: &GrayImage) -> MonoImage {
-        diffuse(
-            image,
-            &[
-                (1, 0, 7.0 / 48.0),
-                (2, 0, 5.0 / 48.0),
-                (-2, 1, 3.0 / 48.0),
-                (-1, 1, 5.0 / 48.0),
-                (0, 1, 7.0 / 48.0),
-                (1, 1, 5.0 / 48.0),
-                (2, 1, 3.0 / 48.0),
-                (-2, 2, 1.0 / 48.0),
-                (-1, 2, 3.0 / 48.0),
-                (0, 2, 5.0 / 48.0),
-                (1, 2, 3.0 / 48.0),
-                (2, 2, 1.0 / 48.0),
-            ],
-        )
+        diffuse(image, Self::TAPS, false)
     }
 }
 
-fn diffuse(image: &GrayImage, taps: &[(isize, usize, f32)]) -> MonoImage {
+fn diffuse(image: &GrayImage, taps: &[(isize, usize, f32)], serpentine: bool) -> MonoImage {
     let width = image.width() as usize;
     let height = image.height() as usize;
     let mut values: Vec<f32> = image.as_raw().iter().map(|&v| f32::from(v)).collect();
     for y in 0..height {
-        for x in 0..width {
+        let reverse = serpentine && y % 2 == 1;
+        for step in 0..width {
+            let x = if reverse { width - 1 - step } else { step };
             let index = y * width + x;
             let old = values[index];
             let new = if old >= 127.5 { 255.0 } else { 0.0 };
             values[index] = new;
             let error = old - new;
             for &(dx, dy, weight) in taps {
-                if let Some(nx) = x.checked_add_signed(dx)
+                if let Some(nx) = x.checked_add_signed(if reverse { -dx } else { dx })
                     && nx < width
                     && y + dy < height
                 {
@@ -312,6 +326,9 @@ pub enum Algorithm {
     JarvisJudiceNinke,
     Riemersma,
     ClusteredDot,
+    Sauvola,
+    Ostromoukhov,
+    Dbs,
 }
 
 impl std::fmt::Display for Algorithm {
@@ -328,6 +345,9 @@ impl std::fmt::Display for Algorithm {
             Self::JarvisJudiceNinke => "jarvis-judice-ninke",
             Self::Riemersma => "riemersma",
             Self::ClusteredDot => "clustered-dot",
+            Self::Sauvola => "sauvola",
+            Self::Ostromoukhov => "ostromoukhov",
+            Self::Dbs => "dbs",
         })
     }
 }
@@ -348,15 +368,18 @@ impl std::str::FromStr for Algorithm {
             "jarvis-judice-ninke" => Ok(Self::JarvisJudiceNinke),
             "riemersma" => Ok(Self::Riemersma),
             "clustered-dot" => Ok(Self::ClusteredDot),
+            "sauvola" => Ok(Self::Sauvola),
+            "ostromoukhov" => Ok(Self::Ostromoukhov),
+            "dbs" => Ok(Self::Dbs),
             _ => Err(
-                "dither must be threshold, floyd-steinberg, bayer, atkinson, stucki, blue-noise, sierra, burkes, jarvis-judice-ninke, riemersma, or clustered-dot",
+                "dither must be threshold, floyd-steinberg, bayer, atkinson, stucki, blue-noise, sierra, burkes, jarvis-judice-ninke, riemersma, clustered-dot, sauvola, ostromoukhov, or dbs",
             ),
         }
     }
 }
 
 impl Algorithm {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 14] = [
         Self::Threshold,
         Self::FloydSteinberg,
         Self::Bayer,
@@ -368,6 +391,9 @@ impl Algorithm {
         Self::JarvisJudiceNinke,
         Self::Riemersma,
         Self::ClusteredDot,
+        Self::Sauvola,
+        Self::Ostromoukhov,
+        Self::Dbs,
     ];
 
     pub fn apply(self, image: &GrayImage, threshold: u8) -> MonoImage {
@@ -383,7 +409,43 @@ impl Algorithm {
             Self::JarvisJudiceNinke => JarvisJudiceNinke.dither(image),
             Self::Riemersma => Riemersma.dither(image),
             Self::ClusteredDot => ClusteredDot.dither(image),
+            Self::Sauvola => Sauvola.dither(image),
+            Self::Ostromoukhov => Ostromoukhov.dither(image),
+            Self::Dbs => DirectBinarySearch.dither(image),
         }
+    }
+
+    pub fn supports_serpentine(self) -> bool {
+        matches!(
+            self,
+            Self::FloydSteinberg
+                | Self::Atkinson
+                | Self::Stucki
+                | Self::Sierra
+                | Self::Burkes
+                | Self::JarvisJudiceNinke
+        )
+    }
+
+    pub fn apply_scanned(self, image: &GrayImage, threshold: u8, serpentine: bool) -> MonoImage {
+        if !serpentine {
+            return self.apply(image, threshold);
+        }
+        let taps = match self {
+            Self::FloydSteinberg => &[
+                (1, 0, 7.0 / 16.0),
+                (-1, 1, 3.0 / 16.0),
+                (0, 1, 5.0 / 16.0),
+                (1, 1, 1.0 / 16.0),
+            ],
+            Self::Atkinson => Atkinson::TAPS,
+            Self::Stucki => Stucki::TAPS,
+            Self::Sierra => Sierra::TAPS,
+            Self::Burkes => Burkes::TAPS,
+            Self::JarvisJudiceNinke => JarvisJudiceNinke::TAPS,
+            _ => return self.apply(image, threshold),
+        };
+        diffuse(image, taps, true)
     }
 }
 

@@ -69,10 +69,18 @@ struct PendingCrop {
     receiver: Receiver<std::result::Result<GrayImage, String>>,
 }
 
+struct PendingRender {
+    revision: u64,
+    receiver: Receiver<std::result::Result<MonoImage, String>>,
+}
+
 pub struct Editor {
     settings: Settings,
     loaded: Option<Loaded>,
     pending: Option<Pending>,
+    pending_render: Option<PendingRender>,
+    render_revision: u64,
+    render_needed: bool,
     zoom: u32,
     crop: Crop,
     error: Option<String>,
@@ -85,6 +93,9 @@ impl Default for Editor {
             settings: Settings::default(),
             loaded: None,
             pending: None,
+            pending_render: None,
+            render_revision: 0,
+            render_needed: false,
             zoom: 2,
             crop: Crop::default(),
             error: None,
@@ -142,7 +153,12 @@ impl Editor {
     fn install(&mut self, path: PathBuf, prepared: Prepared, ctx: &egui::Context) -> Result<()> {
         // Build the complete replacement before dropping the previous valid image.
         // Controls remain live while loading; render with the latest settings.
-        let mono = self.settings.render(prepared.gray(self.settings.framing))?;
+        let mut initial = self.settings.clone();
+        if initial.algorithm == Algorithm::Dbs {
+            initial.algorithm = Algorithm::FloydSteinberg;
+            initial.serpentine = false;
+        }
+        let mono = initial.render(prepared.gray(self.settings.framing))?;
         let thumbnail = &prepared.thumbnail;
         let source_texture = ctx.load_texture(
             "source",
@@ -170,6 +186,9 @@ impl Editor {
         });
         self.crop = Crop::default();
         self.error = None;
+        self.render_revision += 1;
+        self.render_needed = self.settings.algorithm == Algorithm::Dbs;
+        self.start_render()?;
         Ok(())
     }
 
@@ -181,10 +200,23 @@ impl Editor {
     }
 
     fn render_preview(&mut self) -> Result<()> {
-        if let Some(loaded) = &mut self.loaded {
+        self.settings.validate()?;
+        self.render_revision += 1;
+        self.render_needed = self.settings.algorithm == Algorithm::Dbs;
+        if self.render_needed {
+            return self.start_render();
+        }
+        if let Some(loaded) = &self.loaded {
             let mono = self
                 .settings
                 .render(loaded.prepared.gray(self.settings.framing))?;
+            self.install_render(mono);
+        }
+        Ok(())
+    }
+
+    fn install_render(&mut self, mono: MonoImage) {
+        if let Some(loaded) = &mut self.loaded {
             loaded
                 .result_texture
                 .set(preview(&mono), TextureOptions::NEAREST);
@@ -194,7 +226,55 @@ impl Editor {
                 self.status = "Preview updated.".into();
             }
         }
+    }
+
+    fn start_render(&mut self) -> Result<()> {
+        if !self.render_needed || self.pending_render.is_some() {
+            return Ok(());
+        }
+        let Some(loaded) = &self.loaded else {
+            return Ok(());
+        };
+        let settings = self.settings.clone();
+        let gray = loaded.prepared.gray(settings.framing).clone();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        std::thread::Builder::new()
+            .name("dbs-renderer".into())
+            .spawn(move || {
+                let _ = sender.send(settings.render(&gray).map_err(|error| error.to_string()));
+            })?;
+        self.pending_render = Some(PendingRender {
+            revision: self.render_revision,
+            receiver,
+        });
+        self.render_needed = false;
         Ok(())
+    }
+
+    fn poll_render(&mut self) -> Result<()> {
+        if let Some(pending) = &self.pending_render {
+            let result = match pending.receiver.try_recv() {
+                Ok(result) => result,
+                Err(TryRecvError::Empty) => return Ok(()),
+                Err(TryRecvError::Disconnected) => Err("DBS renderer stopped unexpectedly".into()),
+            };
+            let pending = self.pending_render.take().unwrap();
+            if pending.revision == self.render_revision {
+                self.install_render(
+                    result.map_err(|error| -> Box<dyn std::error::Error> { error.into() })?,
+                );
+            }
+        }
+        self.start_render()
+    }
+
+    fn render_updating(&self) -> bool {
+        self.settings.algorithm == Algorithm::Dbs
+            && (self.render_needed
+                || self
+                    .pending_render
+                    .as_ref()
+                    .is_some_and(|pending| pending.revision == self.render_revision))
     }
 
     fn reset(&mut self) {
@@ -351,6 +431,9 @@ impl Editor {
             (Algorithm::JarvisJudiceNinke, "Jarvis–Judice–Ninke"),
             (Algorithm::Riemersma, "Riemersma"),
             (Algorithm::ClusteredDot, "Clustered dot"),
+            (Algorithm::Sauvola, "Sauvola · local threshold"),
+            (Algorithm::Ostromoukhov, "Ostromoukhov"),
+            (Algorithm::Dbs, "DBS · optimized (slower)"),
             (Algorithm::Threshold, "Threshold"),
         ] {
             ui.radio_value(&mut self.settings.algorithm, algorithm, label);
@@ -358,6 +441,13 @@ impl Editor {
         if self.settings.algorithm == Algorithm::Threshold {
             ui.add(egui::Slider::new(&mut self.settings.threshold, 0..=255).text("Cutoff"));
         }
+        ui.add_enabled_ui(self.settings.algorithm.supports_serpentine(), |ui| {
+            ui.checkbox(&mut self.settings.serpentine, "Serpentine scan");
+        });
+        if self.settings.algorithm == Algorithm::Ostromoukhov {
+            ui.small("Always uses serpentine scanning.");
+        }
+        ui.checkbox(&mut self.settings.sharpen, "Mild sharpening");
         ui.add_space(8.0);
         ui.heading("Tone");
         for (label, value, range) in [
@@ -424,6 +514,10 @@ impl Editor {
                             if self.crop_updating() {
                                 ui.spinner();
                                 ui.label("Updating crop… Export uses the displayed preview.");
+                            }
+                            if self.render_updating() {
+                                ui.spinner();
+                                ui.label("Optimizing DBS… Export uses the displayed preview.");
                             }
                         });
                     });
@@ -581,12 +675,28 @@ impl eframe::App for Editor {
         if let Err(error) = self.update_crop(ctx) {
             self.error = Some(error.to_string());
         }
+        if let Err(error) = self.poll_render() {
+            self.error = Some(error.to_string());
+        }
+        if self.pending_render.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn finish_render(editor: &mut Editor) {
+        while let Some(pending) = &editor.pending_render {
+            let result = pending.receiver.recv().unwrap();
+            let (sender, receiver) = mpsc::sync_channel(1);
+            sender.send(result).unwrap();
+            editor.pending_render.as_mut().unwrap().receiver = receiver;
+            editor.poll_render().unwrap();
+        }
+    }
 
     // Wait for a real worker without sleeps, then exercise the UI's polling path.
     fn load(editor: &mut Editor, path: &Path, ctx: &egui::Context) {
@@ -968,6 +1078,8 @@ mod tests {
         let before = editor.settings.clone();
         editor.settings.framing = Framing::Crop;
         editor.settings.brightness = 0.2;
+        editor.settings.serpentine = true;
+        editor.settings.sharpen = true;
         editor.refresh(&before).unwrap();
         editor.update_crop(&ctx).unwrap();
         finish_crop(&mut editor, &ctx);
@@ -1236,7 +1348,10 @@ mod tests {
             editor.settings.contrast = 1.3;
             editor.settings.gamma = 1.7;
             editor.settings.invert = true;
+            editor.settings.serpentine = true;
+            editor.settings.sharpen = true;
             editor.refresh(&previous).unwrap();
+            finish_render(&mut editor);
             let expected = editor.settings.render(&selected).unwrap();
             for zoom in 1..=3 {
                 editor.zoom = zoom;
@@ -1270,16 +1385,195 @@ mod tests {
         load(&mut editor, &input, &ctx);
         for algorithm in Algorithm::ALL {
             editor.settings.algorithm = algorithm;
-            editor.render_preview().unwrap();
+            let gray = editor
+                .loaded
+                .as_ref()
+                .unwrap()
+                .prepared
+                .gray(editor.settings.framing)
+                .clone();
+            let mono = editor.settings.render(&gray).unwrap();
+            editor.install_render(mono);
             let start = std::time::Instant::now();
-            for _ in 0..20 {
-                editor.render_preview().unwrap();
+            let runs = if algorithm == Algorithm::Dbs { 3 } else { 20 };
+            for _ in 0..runs {
+                let mono = editor.settings.render(&gray).unwrap();
+                editor.install_render(mono);
             }
             eprintln!(
-                "{algorithm}: {:?} mean cached render/texture (20 runs)",
-                start.elapsed() / 20
+                "{algorithm}: {:?} mean cached render/texture ({runs} runs)",
+                start.elapsed() / runs
             );
         }
+        editor.settings.algorithm = Algorithm::FloydSteinberg;
+        editor.settings.sharpen = true;
+        editor.settings.serpentine = true;
+        let gray = editor.loaded.as_ref().unwrap().prepared.fit.clone();
+        let start = std::time::Instant::now();
+        for _ in 0..20 {
+            let mono = editor.settings.render(&gray).unwrap();
+            editor.install_render(mono);
+        }
+        eprintln!(
+            "floyd-steinberg + sharpen + serpentine: {:?} mean render/texture (20 runs)",
+            start.elapsed() / 20
+        );
+    }
+
+    #[test]
+    fn dbs_coalesces_controls_rejects_stale_results_and_exports_displayed_preview() {
+        let ctx = egui::Context::default();
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.bmp");
+        let output = directory.path().join("output.bmp");
+        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        let mut editor = Editor::default();
+        load(&mut editor, &input, &ctx);
+        let displayed = editor.loaded.as_ref().unwrap().mono.clone();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let obsolete_revision = editor.render_revision;
+        editor.pending_render = Some(PendingRender {
+            revision: obsolete_revision,
+            receiver,
+        });
+        let start = std::time::Instant::now();
+        for step in 0..100 {
+            let previous = editor.settings.clone();
+            editor.settings.algorithm = Algorithm::Dbs;
+            editor.settings.gamma = 1.0 + step as f32 / 100.0;
+            editor.refresh(&previous).unwrap();
+            assert_eq!(
+                editor.pending_render.as_ref().unwrap().revision,
+                obsolete_revision
+            );
+        }
+        eprintln!("100 coalesced DBS control updates: {:?}", start.elapsed());
+        assert!(editor.render_updating());
+        editor.save_selection(Some(&output)).unwrap();
+        assert_eq!(
+            &image::open(&output).unwrap().into_luma8(),
+            displayed.pixels()
+        );
+        sender
+            .send(Ok(MonoImage::from_fn(WIDTH, HEIGHT, |_, _| true)))
+            .unwrap();
+        editor.poll_render().unwrap();
+        assert_eq!(editor.loaded.as_ref().unwrap().mono, displayed);
+        assert_eq!(
+            editor.pending_render.as_ref().unwrap().revision,
+            editor.render_revision
+        );
+        finish_render(&mut editor);
+        assert!(!editor.render_updating());
+        let loaded = editor.loaded.as_ref().unwrap();
+        assert_eq!(
+            loaded.mono,
+            editor.settings.render(&loaded.prepared.fit).unwrap()
+        );
+
+        // Completing a new crop invalidates work for the earlier cached framing.
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.pending_render = Some(PendingRender {
+            revision: editor.render_revision,
+            receiver,
+        });
+        let previous = editor.settings.clone();
+        editor.settings.framing = Framing::Crop;
+        editor.crop.zoom = 2.0;
+        editor.refresh(&previous).unwrap();
+        editor.update_crop(&ctx).unwrap();
+        finish_crop(&mut editor, &ctx);
+        sender
+            .send(Ok(MonoImage::from_fn(WIDTH, HEIGHT, |_, _| true)))
+            .unwrap();
+        editor.poll_render().unwrap();
+        assert_eq!(
+            editor.pending_render.as_ref().unwrap().revision,
+            editor.render_revision
+        );
+        finish_render(&mut editor);
+        let loaded = editor.loaded.as_ref().unwrap();
+        assert_eq!(
+            loaded.mono,
+            editor
+                .settings
+                .render(&loaded.prepared.source.prepare_crop(editor.crop).unwrap())
+                .unwrap()
+        );
+
+        // Switching back to a fast algorithm cannot be overwritten by old DBS work.
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.pending_render = Some(PendingRender {
+            revision: editor.render_revision,
+            receiver,
+        });
+        let previous = editor.settings.clone();
+        editor.settings.algorithm = Algorithm::Bayer;
+        editor.refresh(&previous).unwrap();
+        let fast = editor.loaded.as_ref().unwrap().mono.clone();
+        sender.send(Ok(displayed)).unwrap();
+        editor.poll_render().unwrap();
+        assert_eq!(editor.loaded.as_ref().unwrap().mono, fast);
+        assert!(editor.pending_render.is_none());
+
+        // Replacement sources invalidate prior work, even with identical controls.
+        editor.settings.algorithm = Algorithm::Dbs;
+        editor.settings.serpentine = true;
+        editor.settings.sharpen = true;
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.pending_render = Some(PendingRender {
+            revision: editor.render_revision,
+            receiver,
+        });
+        load(&mut editor, &input, &ctx);
+        let seed = editor.loaded.as_ref().unwrap().mono.clone();
+        let initial = Settings {
+            algorithm: Algorithm::FloydSteinberg,
+            serpentine: false,
+            ..editor.settings.clone()
+        };
+        assert_eq!(
+            seed,
+            initial
+                .render(
+                    editor
+                        .loaded
+                        .as_ref()
+                        .unwrap()
+                        .prepared
+                        .gray(initial.framing)
+                )
+                .unwrap()
+        );
+        sender
+            .send(Ok(MonoImage::from_fn(WIDTH, HEIGHT, |_, _| true)))
+            .unwrap();
+        editor.poll_render().unwrap();
+        assert_eq!(editor.loaded.as_ref().unwrap().mono, seed);
+        finish_render(&mut editor);
+
+        // A disconnected current worker fails once and does not retry forever.
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.pending_render = Some(PendingRender {
+            revision: editor.render_revision,
+            receiver,
+        });
+        drop(sender);
+        assert!(
+            editor
+                .poll_render()
+                .unwrap_err()
+                .to_string()
+                .contains("stopped unexpectedly")
+        );
+        assert!(editor.pending_render.is_none());
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.pending_render = Some(PendingRender {
+            revision: editor.render_revision,
+            receiver,
+        });
+        drop(editor);
+        assert!(sender.send(Err("closed".into())).is_err());
     }
 
     #[test]

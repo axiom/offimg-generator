@@ -47,6 +47,9 @@ fn algorithm_names_roundtrip_and_default_stays_floyd_steinberg() {
         "jarvis-judice-ninke",
         "riemersma",
         "clustered-dot",
+        "sauvola",
+        "ostromoukhov",
+        "dbs",
     ]) {
         assert_eq!(algorithm.to_string(), name);
         assert_eq!(name.parse::<Algorithm>().unwrap(), algorithm);

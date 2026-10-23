@@ -55,6 +55,10 @@ Algorithm references (formulas/concepts, not copied implementation code):
 
 ## Progress / handoff
 
+The user subsequently responded “Great” and requested further conversion
+algorithms, then selected all four plus sharpening (task 013). This records
+overall approval of this set, not measured physical-size or hardware observations.
+
 Implemented the five algorithms, shared `Algorithm::ALL` enumeration, front-end
 selection/help, README usage/tradeoffs, design decisions, regression/integration
 tests, and task 006 display-evaluation handoff. Original algorithm implementations,

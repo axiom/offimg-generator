@@ -47,6 +47,8 @@ fn help_explains_arguments_and_defaults() {
         "--force",
         "--fit",
         "--dither",
+        "--serpentine",
+        "--sharpen",
         "default: fit",
         "default: floyd-steinberg",
         "atkinson",
@@ -57,6 +59,9 @@ fn help_explains_arguments_and_defaults() {
         "jarvis-judice-ninke",
         "riemersma",
         "clustered-dot",
+        "sauvola",
+        "ostromoukhov",
+        "dbs",
     ] {
         assert!(help.contains(word), "{help}");
     }
@@ -184,6 +189,8 @@ fn every_cli_control_matches_shared_settings_and_defaults() {
             gamma: 1.8,
             threshold: 173,
             invert: true,
+            serpentine: true,
+            sharpen: true,
         };
         let name = algorithm.to_string();
         let result = convert(
@@ -203,6 +210,8 @@ fn every_cli_control_matches_shared_settings_and_defaults() {
                 "--threshold",
                 "173",
                 "--invert",
+                "--serpentine",
+                "--sharpen",
                 "--force",
             ],
         );
