@@ -81,8 +81,12 @@ BMP…**. The source is shown as a scaled thumbnail; the result shows the exact
 400×240 export buffer. Both previews use nearest-neighbor textures at 1×, 2×,
 or 3× physical-pixel zoom (scroll for larger previews). **Reset controls** restores
 the same defaults as the CLI. Failed loads keep the previous image; errors stay
-visible. Existing destinations require confirmation and source aliases are
-protected. No calculator files are copied automatically.
+visible. On the supported KDE Wayland desktop portal, existing destinations
+require only the native save dialog's replacement confirmation; there is no
+second in-app prompt. Cancellation writes nothing, and the source image and
+its symlink/hardlink aliases remain protected even after native approval.
+Other Linux portal backends have not been verified. No calculator files are
+copied automatically.
 
 The optional `gui` feature uses egui/eframe with Glow, Wayland/X11 and
 accessibility support, plus rfd's desktop-portal file dialogs. If a dialog does

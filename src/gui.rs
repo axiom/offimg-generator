@@ -26,7 +26,6 @@ pub struct Editor {
     zoom: u32,
     error: Option<String>,
     status: String,
-    pending_export: Option<PathBuf>,
 }
 
 impl Default for Editor {
@@ -37,7 +36,6 @@ impl Default for Editor {
             zoom: 1,
             error: None,
             status: "Open a PNG, JPEG, BMP, or WebP image to begin.".into(),
-            pending_export: None,
         }
     }
 }
@@ -93,8 +91,15 @@ impl Editor {
         Ok(())
     }
 
-    fn save(&mut self, path: &Path, overwrite: bool) -> Result<()> {
+    fn save_selection(&mut self, selection: Option<&Path>) -> Result<()> {
+        let Some(path) = selection else {
+            self.status =
+                "No export selected. If no dialog appeared, check the desktop portal.".into();
+            return Ok(());
+        };
         if let Some(loaded) = &self.loaded {
+            // The native save dialog approved replacement; new paths still use no-clobber.
+            let overwrite = path.symlink_metadata().is_ok();
             export::save(&loaded.mono, &loaded.path, path, overwrite)?;
             self.error = None;
             self.status = format!("Exported {}", path.display());
@@ -126,19 +131,12 @@ impl Editor {
             )
             .clicked()
         {
-            if let Some(path) = rfd::FileDialog::new()
+            let selection = rfd::FileDialog::new()
                 .add_filter("1-bit BMP", &["bmp"])
                 .set_file_name("off-image.bmp")
-                .save_file()
-            {
-                if path.symlink_metadata().is_ok() {
-                    self.pending_export = Some(path);
-                } else if let Err(error) = self.save(&path, false) {
-                    self.error = Some(format!("Cannot export {}: {error}", path.display()));
-                }
-            } else {
-                self.status =
-                    "No export selected. If no dialog appeared, check the desktop portal.".into();
+                .save_file();
+            if let Err(error) = self.save_selection(selection.as_deref()) {
+                self.error = Some(format!("Cannot export: {error}"));
             }
         }
     }
@@ -205,27 +203,6 @@ impl Editor {
             }
         });
     }
-
-    fn confirmation(&mut self, ctx: &egui::Context) {
-        if let Some(path) = self.pending_export.clone() {
-            egui::Modal::new(egui::Id::new("replace-output")).show(ctx, |ui| {
-                ui.heading("Replace existing output?");
-                ui.label(path.display().to_string());
-                ui.label("The source image and its aliases cannot be replaced.");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_export = None;
-                    }
-                    if ui.button("Replace").clicked() {
-                        self.pending_export = None;
-                        if let Err(error) = self.save(&path, true) {
-                            self.error = Some(format!("Cannot export {}: {error}", path.display()));
-                        }
-                    }
-                });
-            });
-        }
-    }
 }
 
 impl eframe::App for Editor {
@@ -289,7 +266,6 @@ impl eframe::App for Editor {
                 });
             }
         });
-        self.confirmation(ctx);
     }
 }
 
@@ -319,7 +295,7 @@ mod tests {
             start.elapsed()
         );
         assert_eq!(editor.loaded.as_ref().unwrap().gray.as_ptr(), cached);
-        editor.save(&output, false).unwrap();
+        editor.save_selection(Some(&output)).unwrap();
         let loaded = editor.loaded.as_ref().unwrap();
         let decoded = image::open(&output).unwrap().into_luma8();
         assert_eq!(&decoded, loaded.mono.pixels());
@@ -334,12 +310,11 @@ mod tests {
                 .is_err()
         );
         assert_eq!(editor.loaded.as_ref().unwrap().mono, old_mono);
-        assert!(editor.save(&input, true).is_err());
-        assert!(editor.save(&output, false).is_err());
+        assert!(editor.save_selection(Some(&input)).is_err());
         assert_eq!(image::open(&output).unwrap().into_luma8(), decoded);
         assert!(
             editor
-                .save(&directory.path().join("missing/output.bmp"), false)
+                .save_selection(Some(&directory.path().join("missing/output.bmp")))
                 .is_err()
         );
         assert_eq!(editor.loaded.as_ref().unwrap().mono, old_mono);
@@ -363,5 +338,49 @@ mod tests {
             loaded.mono,
             loaded.source.convert(&Settings::default()).unwrap()
         );
+    }
+
+    #[test]
+    fn native_save_selection_cancellation_replacement_and_failures() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let ctx = egui::Context::default();
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.bmp");
+        let output = directory.path().join("output.bmp");
+        fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        fs::write(&output, b"keep this").unwrap();
+        let mut editor = Editor::default();
+        editor.open(&input, &ctx).unwrap();
+        let previous = editor.settings.clone();
+        editor.settings.invert = true;
+        editor.refresh(&previous).unwrap();
+        let mono = editor.loaded.as_ref().unwrap().mono.clone();
+        let texture = editor.loaded.as_ref().unwrap().result_texture.id();
+
+        editor.save_selection(None).unwrap();
+        assert_eq!(fs::read(&output).unwrap(), b"keep this");
+        assert_eq!(editor.loaded.as_ref().unwrap().mono, mono);
+        assert_eq!(editor.loaded.as_ref().unwrap().result_texture.id(), texture);
+
+        editor.save_selection(Some(&output)).unwrap();
+        assert_eq!(&image::open(&output).unwrap().into_luma8(), mono.pixels());
+        let exported = fs::read(&output).unwrap();
+
+        let sym = directory.path().join("symlink.bmp");
+        let hard = directory.path().join("hardlink.bmp");
+        symlink(&input, &sym).unwrap();
+        fs::hard_link(&input, &hard).unwrap();
+        for path in [&input, &sym, &hard] {
+            assert!(editor.save_selection(Some(path)).is_err());
+            assert_eq!(fs::read(&input).unwrap(), include_bytes!("../numbers.bmp"));
+        }
+        assert_eq!(editor.loaded.as_ref().unwrap().mono, mono);
+
+        // Force an encoder failure after the temporary file has been created.
+        editor.loaded.as_mut().unwrap().mono = MonoImage::from_fn(1, 1, |_, _| true);
+        assert!(editor.save_selection(Some(&output)).is_err());
+        assert_eq!(fs::read(&output).unwrap(), exported);
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 4);
     }
 }

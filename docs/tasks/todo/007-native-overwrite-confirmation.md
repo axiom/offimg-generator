@@ -31,16 +31,38 @@ or fallback framework unless a supported backend demonstrably needs it.
 - [ ] Native cancellation leaves existing output and the preview untouched.
 - [ ] Native approval replaces a disposable BMP with the current preview, with
       no in-app confirmation; manually verified on KDE Wayland.
-- [ ] Source paths and symlink/hardlink aliases remain rejected after approval.
-- [ ] Atomic writes, failure cleanup, and CLI no-overwrite/`--force` tests pass.
-- [ ] Automated GUI/export checks cover accepted saves and failure preservation.
-- [ ] Documentation describes the single native confirmation and its supported
+- [x] Source paths and symlink/hardlink aliases remain rejected after approval.
+- [x] Atomic writes, failure cleanup, and CLI no-overwrite/`--force` tests pass.
+- [x] Automated GUI/export checks cover accepted saves and failure preservation.
+- [x] Documentation describes the single native confirmation and its supported
       backend, without claiming the source can be replaced.
-- [ ] `just check` passes.
+- [x] `just check` passes.
 
 ## Progress / handoff
 
-Not started. Planning only. Current code still shows both dialogs.
-Relevant code: `src/gui.rs` toolbar/save/confirmation, `src/export.rs`,
-`tests/cli.rs`, and the GUI-state test in `src/gui.rs`.
-Do not modify the two supplied BMP fixtures or any calculator files.
+Implemented native-only export in `src/gui.rs`: removed pending-export state,
+the in-app modal, and its update call. The toolbar passes the native selection
+to `save_selection`; `None` writes nothing and retains the preview. An accepted
+existing destination permits replacement; new paths retain no-clobber writes.
+The shared atomic exporter and CLI are unchanged.
+
+Inspected the pinned rfd 0.17.2 implementation: portal `SaveFile` returns a
+path only on success; cancellation returns an empty selection, not its Zenity
+fallback. That fallback explicitly uses `--confirm-overwrite`. KDE's native
+replacement prompt was previously confirmed by the user in task 005; other
+portal backends are not claimed as verified. Updated README and design.
+
+Verified `nix develop --command just check`: formatting, all-feature Clippy,
+and all 23 tests pass. Headless GUI tests cover new and existing accepted
+destinations, exact preview/export agreement, cancellation preserving output
+and preview, rejection of source/symlink/hardlink aliases, failed loads, and
+encoder-failure preservation/temporary-file cleanup. The supplied fixtures
+and calculator files are untouched. Headless tests do not exercise native UI.
+
+Next: user runs `just gui` on KDE Wayland with a disposable output BMP. Change
+a control so the preview differs, select that existing output, and cancel the
+native save/replacement dialog: output and preview must remain unchanged.
+Repeat and approve replacement: exported pixels must match the current preview,
+with no in-app confirmation. Record results, check the first two acceptance
+items, remove the pending-manual-check note in the design, and move this task
+to `done/` only after confirmation. Then continue task 008.

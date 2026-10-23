@@ -64,11 +64,13 @@ thresholds `(entry + 0.5)/16`. Inversion swaps output pixels after dithering.
 
 The GUI shows source and result with nearest-neighbor preview at integer zoom
 levels (1×, 2×, 3×). Export must match the current preview pixel-for-pixel.
-The CLI refuses to overwrite output without `--force`. The native KDE portal
-save dialog already confirms replacement; task 007 will remove the redundant
-in-app confirmation (currently both are shown). Never overwrite the source
-image accidentally: identity checks and atomic writes remain mandatory even
-after native approval.
+The CLI refuses to overwrite output without `--force`. The supported KDE
+Wayland portal save dialog confirms replacement; the GUI exports an accepted
+selection directly, without a second in-app prompt. Cancellation writes
+nothing. Existing selections allow atomic replacement; new destinations retain
+no-clobber writes. Source paths and their symlink/hardlink aliases remain
+rejected even after native approval. Other Linux portals are not verified.
+Task 007's final manual KDE check is still pending.
 
 Task 009 will add GUI-only crop editing: a fixed 400:240 frame, drag-to-pan,
 slider/wheel crop zoom, and keyboard alternatives. Keep the selection inside
