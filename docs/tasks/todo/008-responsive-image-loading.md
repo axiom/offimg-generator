@@ -62,32 +62,103 @@ task's scope.
 
 - [ ] Loading state appears promptly; a large, valid image loads while the
       window continues to repaint, move, and respond to closing on KDE Wayland.
-- [ ] Decode and initial full-resolution preparation do not run on the UI thread;
+- [x] Decode and initial full-resolution preparation do not run on the UI thread;
       egui texture updates do run there.
 - [ ] Repeated Fit/Fill changes on a representative 4K wallpaper remain
       responsive, retain tone settings, and cannot apply stale preparation.
-- [ ] Evaluate downsizing/caching before expanding threading; record the chosen
+- [x] Evaluate downsizing/caching before expanding threading; record the chosen
       approach and before/after stage timings, including framing changes.
-- [ ] Any working-image/cache optimization has bounded memory and checks for
+- [x] Any working-image/cache optimization has bounded memory and checks for
       aspect ratio, orientation, transparency, tiny inputs, and image quality;
       the original remains available for task 009's zoomed crops.
-- [ ] A failed/oversized load keeps the old source and preview, shows the error,
+- [x] A failed/oversized load keeps the old source and preview, shows the error,
       clears loading state, and allows a subsequent successful load.
-- [ ] Requests are bounded, and an obsolete result cannot replace newer state
+- [x] Requests are bounded, and an obsolete result cannot replace newer state
       (or a second load is explicitly prevented while busy).
-- [ ] Tests exercise pending/success/failure state transitions deterministically,
+- [x] Tests exercise pending/success/failure state transitions deterministically,
       without relying on arbitrary sleeps, including settings consistency.
-- [ ] Preview/export agreement, decoder limits, and CLI-only behavior remain
+- [x] Preview/export agreement, decoder limits, and CLI-only behavior remain
       covered; `just check` passes.
 - [ ] Record a representative image's dimensions/format, load timings, and
       observed desktop responsiveness; do not use a fragile timing assertion.
 
 ## Progress / handoff
 
-Not started. Planning updated with the user's 4K loading/framing freezes and
-request to consider downsizing before threading. Start with `Editor::open`
-and `Editor::refresh` in `src/gui.rs` and
-`Source::open`/`Source::prepare` in `src/pipeline.rs`. The current shared error
-type is `Box<dyn Error>`; convert to an owned message at the worker boundary
-if sufficient, rather than redesigning every error API just for threading.
-Task 009 will build on this loading/state model for crop preparation.
+Implemented; awaiting the user's KDE Wayland check. Kept in `todo/` until that
+check passes. All code changes are GUI-only in `src/gui.rs`; the shared pipeline,
+decoder limits, CLI behavior, dependencies, and supplied BMP fixtures are unchanged.
+
+Chosen approach: cache both exact original-resolution Fit/Fill preparations
+(2 × 400 × 240 grayscale bytes = 192,000 bytes), rather than downsize a working
+copy. This removes repeated expensive resampling without another filter pass,
+aspect-ratio rounding differences, or lost detail. The full oriented/composited
+original is retained for 009; thumbnail CPU storage is at most 288,000 RGB bytes.
+No full original is cloned for transfer. Existing source/decoder limits still
+bound the originals and resampling intermediates; this is not a new process-wide
+256 MiB limit. The old source remains resident while one replacement loads.
+
+One detached thread does file I/O, decode/orientation/compositing, both framing
+preparations, and thumbnail creation. A capacity-one channel returns owned CPU
+buffers or a string error and wakes egui. UI-thread installation renders with
+the latest settings and creates textures before replacing the old loaded state.
+Open/export are disabled while busy; controls and preview zoom stay available.
+Missing/oversized inputs and disconnected workers clear pending state without
+losing the previous image. Closing never joins the worker. There is no queue,
+async runtime, per-slider worker, or change to native dialogs/export.
+
+### Measurements (2026-10-23)
+
+Representative existing wallpaper: `ghost-rider-skull-3840x2160-16397.jpg`,
+3840×2160 JPEG. Debug/test profile, no timing assertions; normal `just gui`
+also uses the debug profile. Decode/orientation/compositing measured together.
+
+| Stage | Before | After |
+| --- | --- | --- |
+| File decode/orientation/white compositing | 1.629 s on UI | 1.594 s on worker |
+| Full-source Fit preparation | 2.360–2.368 s per toggle | cached during loading |
+| Full-source Fill preparation | 2.390–2.406 s per toggle | cached during loading |
+| Prepare both framing caches | not done up front | 4.719 s on worker |
+| Source thumbnail | 336 ms on UI | 331 ms on worker |
+| Cached tone/dither/texture update | 8.9–9.2 ms | unchanged small UI work |
+| Fit/Fill including render/texture | about 2.4 s | 8.55–8.72 ms |
+| UI install/render/both textures | part of blocking load | 10.52 ms |
+
+Tradeoff: initial background work totals about 6.64 s rather than approximately
+4.33 s blocking the UI for one mode. Caching prioritizes responsive interaction
+and exact quality over shorter initial wall-clock time. No GUI-only working
+image was introduced, so tiny inputs, orientation, alpha compositing, framing,
+and photo/text quality use the unchanged shared pipeline. Tests compare caches
+against original preparation on tiny, transparent, portrait, and line-art-like
+inputs; existing core tests cover all EXIF orientations and extreme aspect ratios.
+Visible desktop quality/responsiveness is not claimed from headless tests.
+
+Commands passed:
+
+- `nix develop --command just check` (25 tests passed, one manual timing test ignored).
+- `nix develop --command cargo test --no-default-features` (21 tests passed).
+- `nix develop --command env OFFIMG_BENCH_IMAGE=/path/to/wallpaper.jpg cargo test --all-features image_loading_timings -- --ignored --nocapture`.
+
+Tests exercise empty/pending polling, rejection of a second request, successful
+replacement with settings changed during loading, missing/oversized failures,
+worker disconnection, subsequent successful loading, receiver drop on closing,
+cache agreement, source protection, and preview/export agreement. Synchronization
+uses channels, not sleeps. The timing test remains ignored for normal checks.
+
+### Next step: manual KDE Wayland acceptance
+
+Run `just gui` (or `nix develop --command just gui`) and:
+
+1. Open a large valid wallpaper. Confirm the loading indicator animates promptly,
+   move/resize the window while loading, and verify closing does not wait. Reopen
+   for subsequent checks. Native file dialogs themselves remain synchronous.
+2. Load a second image while a preview exists. Check the old preview stays visible;
+   adjust tone/Fill during the wait and verify the new preview uses those settings.
+3. Toggle Fit/Fill repeatedly on the 4K wallpaper; verify no freezing, settings
+   loss, stale framing, or unexpected visual differences on photos and line art.
+4. Try an invalid/oversized file, then a valid file; verify error/recovery and
+   that export still matches the displayed preview.
+
+Record the user's observed desktop results, check the remaining acceptance items,
+and move this file to `done/` only after those pass. Task 009 builds on `Prepared`
+and the pending/result model; it must regenerate selected crops from the retained
+oriented original rather than either fixed framing cache.

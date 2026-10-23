@@ -1,7 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc::{self, Receiver, TryRecvError},
+};
 
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
-use image::GrayImage;
+use image::{GrayImage, RgbImage};
 
 use crate::{
     HEIGHT, Result, WIDTH,
@@ -11,10 +14,43 @@ use crate::{
     pipeline::{BRIGHTNESS_RANGE, CONTRAST_RANGE, Framing, GAMMA_RANGE, Settings, Source},
 };
 
+struct Prepared {
+    source: Source,
+    fit: GrayImage,
+    crop: GrayImage,
+    thumbnail: RgbImage,
+}
+
+impl Prepared {
+    fn open(path: &Path) -> Result<Self> {
+        let source = Source::open(path)?;
+        let fit = source.prepare(Framing::Fit);
+        let crop = source.prepare(Framing::Crop);
+        let thumbnail = image::imageops::thumbnail(source.image(), WIDTH, HEIGHT);
+        Ok(Self {
+            source,
+            fit,
+            crop,
+            thumbnail,
+        })
+    }
+
+    fn gray(&self, framing: Framing) -> &GrayImage {
+        match framing {
+            Framing::Fit => &self.fit,
+            Framing::Crop => &self.crop,
+        }
+    }
+}
+
+struct Pending {
+    path: PathBuf,
+    receiver: Receiver<std::result::Result<Prepared, String>>,
+}
+
 struct Loaded {
     path: PathBuf,
-    source: Source,
-    gray: GrayImage,
+    prepared: Prepared,
     mono: MonoImage,
     source_texture: TextureHandle,
     result_texture: TextureHandle,
@@ -23,6 +59,7 @@ struct Loaded {
 pub struct Editor {
     settings: Settings,
     loaded: Option<Loaded>,
+    pending: Option<Pending>,
     zoom: u32,
     error: Option<String>,
     status: String,
@@ -33,6 +70,7 @@ impl Default for Editor {
         Self {
             settings: Settings::default(),
             loaded: None,
+            pending: None,
             zoom: 1,
             error: None,
             status: "Open a PNG, JPEG, BMP, or WebP image to begin.".into(),
@@ -46,11 +84,51 @@ fn preview(mono: &MonoImage) -> ColorImage {
 
 impl Editor {
     fn open(&mut self, path: &Path, ctx: &egui::Context) -> Result<()> {
+        if self.pending.is_some() {
+            return Err("an image is already loading".into());
+        }
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let worker_path = path.to_path_buf();
+        let ctx = ctx.clone();
+        // Dropping the handle detaches: closing the window never joins a decoder.
+        std::thread::Builder::new()
+            .name("image-loader".into())
+            .spawn(move || {
+                let result = Prepared::open(&worker_path).map_err(|error| error.to_string());
+                let _ = sender.send(result);
+                ctx.request_repaint();
+            })?;
+        self.pending = Some(Pending {
+            path: path.to_path_buf(),
+            receiver,
+        });
+        self.error = None;
+        self.status = format!("Loading {}…", path.display());
+        Ok(())
+    }
+
+    fn poll_load(&mut self, ctx: &egui::Context) {
+        let Some(pending) = &self.pending else { return };
+        let result = match pending.receiver.try_recv() {
+            Ok(result) => result,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => Err("image loader stopped unexpectedly".into()),
+        };
+        let pending = self.pending.take().unwrap();
+        if let Err(error) = result
+            .map_err(Into::into)
+            .and_then(|prepared| self.install(pending.path.clone(), prepared, ctx))
+        {
+            self.error = Some(format!("Cannot load {}: {error}", pending.path.display()));
+            self.status = "Load failed; previous image retained.".into();
+        }
+    }
+
+    fn install(&mut self, path: PathBuf, prepared: Prepared, ctx: &egui::Context) -> Result<()> {
         // Build the complete replacement before dropping the previous valid image.
-        let source = Source::open(path)?;
-        let gray = source.prepare(self.settings.framing);
-        let mono = self.settings.render(&gray)?;
-        let thumbnail = image::imageops::thumbnail(source.image(), WIDTH, HEIGHT);
+        // Controls remain live while loading; render with the latest settings.
+        let mono = self.settings.render(prepared.gray(self.settings.framing))?;
+        let thumbnail = &prepared.thumbnail;
         let source_texture = ctx.load_texture(
             "source",
             ColorImage::from_rgb(
@@ -60,16 +138,20 @@ impl Editor {
             TextureOptions::NEAREST,
         );
         let result_texture = ctx.load_texture("result", preview(&mono), TextureOptions::NEAREST);
+        self.status = format!(
+            "Loaded {} · {}×{}",
+            path.display(),
+            prepared.source.image().width(),
+            prepared.source.image().height()
+        );
         self.loaded = Some(Loaded {
-            path: path.to_path_buf(),
-            source,
-            gray,
+            path,
+            prepared,
             mono,
             source_texture,
             result_texture,
         });
         self.error = None;
-        self.status = format!("Loaded {}", path.display());
         Ok(())
     }
 
@@ -77,16 +159,17 @@ impl Editor {
         if let Some(loaded) = &mut self.loaded
             && self.settings != *previous
         {
-            if self.settings.framing != previous.framing {
-                loaded.gray = loaded.source.prepare(self.settings.framing);
-            }
-            let mono = self.settings.render(&loaded.gray)?;
+            let mono = self
+                .settings
+                .render(loaded.prepared.gray(self.settings.framing))?;
             loaded
                 .result_texture
                 .set(preview(&mono), TextureOptions::NEAREST);
             loaded.mono = mono;
             self.error = None;
-            self.status = "Preview updated.".into();
+            if self.pending.is_none() {
+                self.status = "Preview updated.".into();
+            }
         }
         Ok(())
     }
@@ -109,7 +192,10 @@ impl Editor {
 
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         if ui
-            .add(egui::Button::new("Open image…").min_size(egui::vec2(110.0, 32.0)))
+            .add_enabled(
+                self.pending.is_none(),
+                egui::Button::new("Open image…").min_size(egui::vec2(110.0, 32.0)),
+            )
             .clicked()
         {
             if let Some(path) = rfd::FileDialog::new()
@@ -126,7 +212,7 @@ impl Editor {
         }
         if ui
             .add_enabled(
-                self.loaded.is_some(),
+                self.loaded.is_some() && self.pending.is_none(),
                 egui::Button::new("Export BMP…").min_size(egui::vec2(120.0, 32.0)),
             )
             .clicked()
@@ -207,6 +293,7 @@ impl Editor {
 
 impl eframe::App for Editor {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_load(ctx);
         let previous = self.settings.clone();
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.add_space(8.0);
@@ -214,6 +301,10 @@ impl eframe::App for Editor {
                 ui.heading("R47 OFF-image");
                 ui.add_space(24.0);
                 self.toolbar(ui);
+                if self.pending.is_some() {
+                    ui.spinner();
+                    ui.label("Loading image…");
+                }
             });
             ui.add_space(8.0);
         });
@@ -273,6 +364,68 @@ impl eframe::App for Editor {
 mod tests {
     use super::*;
 
+    // Wait for a real worker without sleeps, then exercise the UI's polling path.
+    fn load(editor: &mut Editor, path: &Path, ctx: &egui::Context) {
+        editor.open(path, ctx).unwrap();
+        let pending = editor.pending.as_mut().unwrap();
+        let result = pending.receiver.recv().unwrap();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender
+            .send(result)
+            .unwrap_or_else(|_| panic!("receiver dropped"));
+        pending.receiver = receiver;
+        editor.poll_load(ctx);
+        assert!(editor.pending.is_none());
+    }
+
+    #[test]
+    #[ignore = "manual stage timings; set OFFIMG_BENCH_IMAGE to a representative wallpaper"]
+    fn image_loading_timings() {
+        use std::time::Instant;
+
+        let path = std::env::var_os("OFFIMG_BENCH_IMAGE").expect("set OFFIMG_BENCH_IMAGE");
+        let start = Instant::now();
+        let source = Source::open(Path::new(&path)).unwrap();
+        eprintln!(
+            "decode/orient/composite {:?}: {:?}",
+            source.image().dimensions(),
+            start.elapsed()
+        );
+        for framing in [Framing::Fit, Framing::Crop, Framing::Fit, Framing::Crop] {
+            let start = Instant::now();
+            let gray = source.prepare(framing);
+            eprintln!("full-source {framing} prepare: {:?}", start.elapsed());
+            let start = Instant::now();
+            let mono = Settings::default().render(&gray).unwrap();
+            let ctx = egui::Context::default();
+            let _texture = ctx.load_texture("result", preview(&mono), TextureOptions::NEAREST);
+            eprintln!("cached render/texture: {:?}", start.elapsed());
+        }
+        let start = Instant::now();
+        let thumbnail = image::imageops::thumbnail(source.image(), WIDTH, HEIGHT);
+        eprintln!("thumbnail: {:?}", start.elapsed());
+        let start = Instant::now();
+        let prepared = Prepared {
+            fit: source.prepare(Framing::Fit),
+            crop: source.prepare(Framing::Crop),
+            source,
+            thumbnail,
+        };
+        eprintln!("both framing caches: {:?}", start.elapsed());
+        let ctx = egui::Context::default();
+        let mut editor = Editor::default();
+        let start = Instant::now();
+        editor.install(PathBuf::from(path), prepared, &ctx).unwrap();
+        eprintln!("UI install/render/textures: {:?}", start.elapsed());
+        for framing in [Framing::Crop, Framing::Fit, Framing::Crop, Framing::Fit] {
+            let previous = editor.settings.clone();
+            editor.settings.framing = framing;
+            let start = Instant::now();
+            editor.refresh(&previous).unwrap();
+            eprintln!("cached {framing} render/texture: {:?}", start.elapsed());
+        }
+    }
+
     #[test]
     fn gui_preview_export_cache_reset_and_failures() {
         let ctx = egui::Context::default();
@@ -283,8 +436,8 @@ mod tests {
             .save(&input)
             .unwrap();
         let mut editor = Editor::default();
-        editor.open(&input, &ctx).unwrap();
-        let cached = editor.loaded.as_ref().unwrap().gray.as_ptr();
+        load(&mut editor, &input, &ctx);
+        let cached = editor.loaded.as_ref().unwrap().prepared.fit.as_ptr();
         let before = editor.settings.clone();
         editor.settings.gamma = 1.5;
         editor.settings.invert = true;
@@ -294,7 +447,10 @@ mod tests {
             "cached GUI tone/dither/texture update: {:?}",
             start.elapsed()
         );
-        assert_eq!(editor.loaded.as_ref().unwrap().gray.as_ptr(), cached);
+        assert_eq!(
+            editor.loaded.as_ref().unwrap().prepared.fit.as_ptr(),
+            cached
+        );
         editor.save_selection(Some(&output)).unwrap();
         let loaded = editor.loaded.as_ref().unwrap();
         let decoded = image::open(&output).unwrap().into_luma8();
@@ -304,11 +460,8 @@ mod tests {
             assert_eq!(color.to_array(), [pixel[0], pixel[0], pixel[0], 255]);
         }
         let old_mono = loaded.mono.clone();
-        assert!(
-            editor
-                .open(&directory.path().join("missing"), &ctx)
-                .is_err()
-        );
+        load(&mut editor, &directory.path().join("missing"), &ctx);
+        assert!(editor.error.as_ref().unwrap().contains("Cannot load"));
         assert_eq!(editor.loaded.as_ref().unwrap().mono, old_mono);
         assert!(editor.save_selection(Some(&input)).is_err());
         assert_eq!(image::open(&output).unwrap().into_luma8(), decoded);
@@ -322,11 +475,12 @@ mod tests {
         editor.settings.framing = Framing::Crop;
         editor.refresh(&previous).unwrap();
         assert_eq!(
-            editor.loaded.as_ref().unwrap().gray,
+            editor.loaded.as_ref().unwrap().prepared.crop,
             editor
                 .loaded
                 .as_ref()
                 .unwrap()
+                .prepared
                 .source
                 .prepare(Framing::Crop)
         );
@@ -336,8 +490,120 @@ mod tests {
         let loaded = editor.loaded.as_ref().unwrap();
         assert_eq!(
             loaded.mono,
-            loaded.source.convert(&Settings::default()).unwrap()
+            loaded
+                .prepared
+                .source
+                .convert(&Settings::default())
+                .unwrap()
         );
+    }
+
+    #[test]
+    fn pending_load_retains_preview_uses_latest_settings_and_recovers() {
+        let ctx = egui::Context::default();
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.bmp");
+        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
+        let mut editor = Editor::default();
+        load(&mut editor, &input, &ctx);
+        let old_texture = editor.loaded.as_ref().unwrap().result_texture.id();
+        let old_pixels = editor.loaded.as_ref().unwrap().mono.clone();
+
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.pending = Some(Pending {
+            path: input.clone(),
+            receiver,
+        });
+        editor.poll_load(&ctx);
+        assert!(editor.pending.is_some());
+        assert_eq!(
+            editor.loaded.as_ref().unwrap().result_texture.id(),
+            old_texture
+        );
+        assert_eq!(editor.loaded.as_ref().unwrap().mono, old_pixels);
+        assert!(editor.open(&input, &ctx).is_err());
+
+        let previous = editor.settings.clone();
+        editor.settings.gamma = 1.7;
+        editor.settings.invert = true;
+        editor.settings.framing = Framing::Crop;
+        editor.refresh(&previous).unwrap();
+        sender
+            .send(Ok(Prepared::open(&input).unwrap()))
+            .unwrap_or_else(|_| panic!("receiver dropped"));
+        editor.poll_load(&ctx);
+        assert!(editor.pending.is_none());
+        let loaded = editor.loaded.as_ref().unwrap();
+        assert_eq!(
+            loaded.mono,
+            loaded.prepared.source.convert(&editor.settings).unwrap()
+        );
+        assert!(editor.error.is_none());
+        let texture = loaded.result_texture.id();
+        let pixels = loaded.mono.clone();
+
+        // An oversized real decoder input must follow the same failure/recovery path.
+        let oversized = directory.path().join("oversized.bmp");
+        let mut bytes = include_bytes!("../numbers.bmp").to_vec();
+        bytes[18..22].copy_from_slice(&(crate::pipeline::MAX_DIMENSION + 1).to_le_bytes());
+        std::fs::write(&oversized, bytes).unwrap();
+        load(&mut editor, &oversized, &ctx);
+        assert!(editor.error.as_ref().unwrap().contains("resize it first"));
+        assert_eq!(editor.loaded.as_ref().unwrap().mono, pixels);
+        assert_eq!(editor.loaded.as_ref().unwrap().result_texture.id(), texture);
+
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.pending = Some(Pending {
+            path: input.clone(),
+            receiver,
+        });
+        drop(sender);
+        editor.poll_load(&ctx);
+        assert!(editor.pending.is_none());
+        assert!(
+            editor
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("stopped unexpectedly")
+        );
+        load(&mut editor, &input, &ctx);
+        assert!(editor.error.is_none());
+        assert_eq!(editor.loaded.as_ref().unwrap().mono, pixels);
+
+        // Dropping an editor with an unfinished request does not join the worker.
+        let (sender, receiver) = mpsc::sync_channel(1);
+        editor.pending = Some(Pending {
+            path: input,
+            receiver,
+        });
+        drop(editor);
+        assert!(sender.send(Err("closed".into())).is_err());
+    }
+
+    #[test]
+    fn prepared_caches_match_original_for_tiny_alpha_and_line_art_inputs() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.png");
+        for (width, height) in [(1, 1), (3, 7), (800, 240), (240, 800)] {
+            image::RgbaImage::from_fn(width, height, |x, y| {
+                image::Rgba([
+                    if (x + y) % 2 == 0 { 0 } else { 255 },
+                    0,
+                    0,
+                    (x % 256) as u8,
+                ])
+            })
+            .save(&input)
+            .unwrap();
+            let prepared = Prepared::open(&input).unwrap();
+            assert_eq!(prepared.source.image().dimensions(), (width, height));
+            assert!(prepared.thumbnail.width() <= WIDTH && prepared.thumbnail.height() <= HEIGHT);
+            for framing in [Framing::Fit, Framing::Crop] {
+                assert_eq!(prepared.gray(framing), &prepared.source.prepare(framing));
+                assert_eq!(prepared.gray(framing).len(), (WIDTH * HEIGHT) as usize);
+            }
+        }
     }
 
     #[test]
@@ -351,7 +617,7 @@ mod tests {
         fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
         fs::write(&output, b"keep this").unwrap();
         let mut editor = Editor::default();
-        editor.open(&input, &ctx).unwrap();
+        load(&mut editor, &input, &ctx);
         let previous = editor.settings.clone();
         editor.settings.invert = true;
         editor.refresh(&previous).unwrap();

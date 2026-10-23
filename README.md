@@ -88,6 +88,16 @@ its symlink/hardlink aliases remain protected even after native approval.
 Other Linux portal backends have not been verified. No calculator files are
 copied automatically.
 
+Image decoding, full-resolution framing, and thumbnail preparation run in one
+background load, with a loading indicator and the previous preview retained.
+Open/export are disabled during loading; tone and framing controls remain live,
+and a successful load uses their latest values. Fit/Fill then switches between
+two cached grayscale buffers without resampling the original. The original is
+retained at full resolution; no extra downsizing changes image quality or CLI
+output. Preparing both modes can make the initial wait longer, but closing the
+window does not wait for the loader. KDE Wayland responsiveness verification is
+still pending in task 008.
+
 The optional `gui` feature uses egui/eframe with Glow, Wayland/X11 and
 accessibility support, plus rfd's desktop-portal file dialogs. If a dialog does
 not appear, check the host session's desktop portal; cancellation or unavailable

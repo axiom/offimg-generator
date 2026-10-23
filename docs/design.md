@@ -12,7 +12,7 @@ GUI with a live preview. Confirm compatibility on an actual R47.
 Use one Cargo package: a shared conversion library and two binaries, `offimg`
 and `offimg-gui`. Keep GUI dependencies optional behind a `gui` feature so a
 CLI-only build does not need the desktop stack. No multi-crate workspace,
-plugin system, or background workers initially.
+plugin system, or async runtime. The GUI uses one background image-loading thread.
 
 Suggested modules: `pipeline`, `dither`, `mono`, and `bmp`. Use `image` for
 decoding and resizing, `clap` for CLI parsing, `eframe`/`egui` for the GUI,
@@ -30,17 +30,27 @@ Both front ends share settings, defaults, validation, and conversion code:
 6. Optionally invert.
 7. Preview or export the same monochrome buffer.
 
-Keep the original input and cache the resized grayscale image. Never apply
-adjustments cumulatively to a previous result. Start with processing on the
-UI thread at this small output size; measure before introducing concurrency.
-Enforce input decoder limits and retain the current image if loading fails.
-The user has since observed stalls while loading images and switching Fit/Fill,
-especially with 4K wallpapers. Task 008 will first measure and consider a
-bounded GUI working image and/or prepared framing caches, then move remaining
-expensive loading/preparation off the UI thread. Resizing already precedes
-grayscale/dithering, but currently repeats from the full source on reframing.
-Retain the original for zoomed crops; do not assume every cached 400×240 tone
-update needs background processing. This follow-up is not yet implemented.
+Keep the oriented, white-composited original input and cache both exact
+400×240 Fit/Fill grayscale buffers in the GUI (192,000 bytes total). Never apply
+adjustments cumulatively to a previous result. Measurements on a 3840×2160 JPEG
+in the debug build found full-source resizing cost about 2.4 s per framing,
+versus about 9 ms for cached tone/dither/texture updates. Caching avoids those
+repeated resizes without a working-image downsize or any quality/CLI change.
+
+One detached standard thread decodes, prepares both modes, and creates the
+bounded source thumbnail. A capacity-one channel transfers owned CPU buffers or
+an error message; the worker requests a repaint after sending. Only the UI
+thread renders the small final buffer, creates/updates textures, and replaces
+editor state. Open/export are disabled while a request is pending, so requests
+cannot accumulate or overtake each other. Controls still update the old preview;
+new buffers render with the latest settings, not a stale snapshot. Errors retain
+the old image and clear pending state. Closing drops the receiver without joining
+the decoder. Decoder limits are unchanged; no full source is cloned to cross the
+thread boundary. At most the old source and one replacement coexist, plus the
+existing bounded decoder/resampling intermediates. Original dimensions/detail
+remain available for task 009, with coordinates tied to the oriented original.
+Preparing both modes lengthens initial loading but removes reframing stalls;
+native dialogs and export remain synchronous. KDE Wayland verification is pending.
 
 ## Dithering and controls
 
