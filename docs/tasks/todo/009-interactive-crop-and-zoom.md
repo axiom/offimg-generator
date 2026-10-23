@@ -68,8 +68,8 @@ Do not add presets, rotation, free-aspect crop handles, or CLI crop controls.
 
 ## Progress / handoff
 
-Implemented. The user confirms cropping/zooming works and requested removal of
-the zoom/pan sliders. Remaining: explicit representative-large-image
+Implemented. The user confirms cropping/zooming works and has also confirmed the
+updated slider-free UI. Remaining: explicit representative-large-image
 responsiveness confirmation before moving to `done/`.
 
 - `src/pipeline.rs`: shared `Crop`/`CropBounds`, finite validation, 1×–16× zoom,
@@ -103,12 +103,10 @@ zoom and dragging are unchanged; a read-only crop zoom hint distinguishes it
 from preview magnification. Tab to the frame for arrow-key pan and +/− zoom.
 Updated the headless keyboard test to exercise the frame, not removed sliders.
 Follow-up validation: `nix develop --command just check` passes again (32 tests,
-formatting and Clippy; two manual timing tests skipped). The updated layout has
-not been visually rechecked by the agent.
+formatting and Clippy; two manual timing tests skipped). The user subsequently
+confirmed the updated slider-free UI. No code changed after those checks.
 
-Next: run `just gui` on KDE Wayland with a large real image. Verify responsiveness
-and the slider-free controls, keyboard pan/zoom, Fit/Fill retention and Reset;
-check scrolling outside the frame and independence at 1×/2×/3× preview zoom.
-During a slow crop, export and confirm it matches the visible monochrome result;
-then confirm the latest selection appears without freezes or stale updates.
-Record the desktop result here; do not claim hardware compatibility from it.
+Remaining desktop check: confirm loading/dragging responsiveness with a large real
+image, without freezes or stale updates. The UI confirmation did not explicitly
+identify the test image size. Record that result before moving to `done/`;
+do not claim hardware compatibility from desktop checks.
