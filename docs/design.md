@@ -90,7 +90,9 @@ rejected even after native approval. Other Linux portals are not verified.
 The user confirmed task 007's single native confirmation flow on KDE Wayland.
 
 Fill now supports GUI-only crop editing: a fixed 400:240 frame, drag-to-pan,
-1×–16× slider/wheel crop zoom, and keyboard-adjustable zoom/pan sliders.
+1×–16× mouse-wheel crop zoom, without zoom/pan sliders (the user's preferred
+interaction after desktop testing). The focusable crop frame retains keyboard
+access: arrow keys pan the image, +/− zoom.
 Shared `Crop` math validates finite controls, clamps the normalized center inside
 the oriented original, and maps frame-relative drags to source coordinates.
 Whole-pixel crop dimensions/origins preserve the legacy centered CLI output;
@@ -112,8 +114,9 @@ label it **Updating crop…**; export still writes exactly that displayed buffer
 On a generated 3840×2160 RGB PNG in the debug build, crop preparation measured
 2.42 s / 692 ms / 62 ms at 1× / 2× / 16×; 200 request-coalescing calls while the
 worker ran took 6.3 µs (not an end-to-end UI timing). Headless egui tests exercise
-drag/wheel handling without page scrolling and keyboard slider adjustment.
-KDE Wayland interaction/responsiveness still requires user verification (009).
+drag/wheel handling without page scrolling and focused-frame keyboard adjustment.
+The user confirmed cropping/zooming works; representative-large-image
+responsiveness still needs explicit confirmation (009).
 
 Task 010 will stack the source/crop editor above the monochrome export preview,
 rather than side by side, to better fit the landscape images within the window.

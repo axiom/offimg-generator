@@ -11,7 +11,8 @@ instead of being limited to fit or a centered crop.
 
 - GUI-only initially; no new CLI flags or changed CLI defaults.
 - A fixed **400:240** crop frame, with the image dragged behind it to pan.
-- A zoom slider and mouse-wheel zoom over the crop editor.
+- Mouse-wheel zoom over the crop editor; no zoom/pan sliders, per the user's
+  follow-up after confirming cropping and zooming works.
 - Keep the crop entirely inside the source; no new blank margins in crop mode.
 - Existing Fit mode still shows the whole image with white margins.
 
@@ -27,7 +28,8 @@ At crop zoom 1×, use the largest centered output-aspect crop inside the image.
 Zoom around the current crop center, clamp panning at image edges, and validate
 a finite, documented zoom range that cannot produce an empty selection. Wheel
 input should zoom only while hovering the editor, not hijack other scrolling.
-Provide keyboard-adjustable zoom/pan controls as an alternative to dragging.
+Keep keyboard access on the focusable frame (arrows pan the image, +/− zoom),
+without separate zoom/pan controls.
 
 Keep crop math/resampling in the shared conversion core, independent of egui;
 GUI-only editing state need not become new CLI-facing settings. Map display
@@ -48,7 +50,7 @@ Do not add presets, rotation, free-aspect crop handles, or CLI crop controls.
 
 ## Acceptance
 
-- [ ] On KDE Wayland, dragging and slider/wheel zoom select an off-center portion
+- [x] On KDE Wayland, dragging and wheel zoom select an off-center portion
       of a real image, with a fixed output-aspect frame and live result preview.
 - [x] Crop zoom and preview magnification are clearly labeled and independent;
       preview magnification alone never changes exported pixels.
@@ -66,13 +68,15 @@ Do not add presets, rotation, free-aspect crop handles, or CLI crop controls.
 
 ## Progress / handoff
 
-Implemented; awaiting the user's KDE Wayland checks before moving to `done/`.
+Implemented. The user confirms cropping/zooming works and requested removal of
+the zoom/pan sliders. Remaining: explicit representative-large-image
+responsiveness confirmation before moving to `done/`.
 
 - `src/pipeline.rs`: shared `Crop`/`CropBounds`, finite validation, 1×–16× zoom,
   clamped normalized centers, frame-to-source drag mapping, crop-before-resize.
   Centered 1× output remains pixel-identical to the previous integer crop.
 - `src/gui.rs`: fixed-frame Fill editor using thumbnail UVs, drag/wheel input,
-  keyboard-adjustable zoom/pan sliders, independent preview magnification,
+  keyboard access on the frame instead of zoom/pan sliders, independent preview magnification,
   retained Fit/Fill selection, reset/new-image behavior. Source pixels are shared
   with one detached crop worker, with coalescing, stale-result rejection and a
   visible pending label. Export uses the displayed monochrome buffer even pending.
@@ -94,8 +98,16 @@ warnings denied, 32 tests; two manual timing tests skipped). The crop timing
 test above was run separately. `nix develop --command cargo test
 --no-default-features` also passed all 24 CLI/core tests.
 
-Next: run `just gui` on KDE Wayland with a large real image. Verify off-center
-dragging, zoom slider/wheel, keyboard pan/zoom, Fit/Fill retention and Reset;
+Follow-up: removed the crop zoom and both pan sliders as requested. Mouse-wheel
+zoom and dragging are unchanged; a read-only crop zoom hint distinguishes it
+from preview magnification. Tab to the frame for arrow-key pan and +/− zoom.
+Updated the headless keyboard test to exercise the frame, not removed sliders.
+Follow-up validation: `nix develop --command just check` passes again (32 tests,
+formatting and Clippy; two manual timing tests skipped). The updated layout has
+not been visually rechecked by the agent.
+
+Next: run `just gui` on KDE Wayland with a large real image. Verify responsiveness
+and the slider-free controls, keyboard pan/zoom, Fit/Fill retention and Reset;
 check scrolling outside the frame and independence at 1×/2×/3× preview zoom.
 During a slow crop, export and confirm it matches the visible monochrome result;
 then confirm the latest selection appears without freezes or stale updates.

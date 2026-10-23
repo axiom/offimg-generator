@@ -78,10 +78,10 @@ just gui
 
 Use **Open…** to select an image, adjust framing/dithering/tone, then **Export
 BMP…**. **Fit** shows the whole source with white margins. **Fill** uses a fixed
-400:240 frame: drag the image behind it, or use **Crop zoom** (1×–16×) and the
-horizontal/vertical pan sliders. Wheel scrolling zooms only over the crop frame;
-elsewhere it scrolls normally. Tab to a slider and use arrow keys, or edit its
-numeric value, to frame without dragging. At crop zoom 1× the selection starts
+400:240 frame: drag the image behind it to pan and use the mouse wheel to zoom
+(1×–16×). There are no crop zoom/pan sliders. Wheel scrolling zooms only over the
+crop frame; elsewhere it scrolls normally. For keyboard access, Tab to the frame:
+arrow keys pan the image and +/− zoom. At crop zoom 1× the selection starts
 as the largest centered crop; zoom keeps its center unless clamped at an edge.
 Selections stay inside the oriented original, rounded to whole source pixels
 (at least one per axis, even for tiny images).

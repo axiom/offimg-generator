@@ -333,27 +333,10 @@ impl Editor {
             "Fill · interactive crop",
         );
         if self.settings.framing == Framing::Crop {
-            let label = ui.label("Crop zoom · 1×–16×");
-            ui.add(egui::Slider::new(&mut self.crop.zoom, CROP_ZOOM_RANGE).logarithmic(true))
-                .labelled_by(label.id);
-            ui.small("Drag image or scroll over frame. Keyboard: focus sliders, use arrow keys.");
-            for (label, value) in [
-                ("Pan horizontally", &mut self.crop.center_x),
-                ("Pan vertically", &mut self.crop.center_y),
-            ] {
-                let label = ui.label(label);
-                ui.add(egui::Slider::new(value, 0.0..=1.0))
-                    .labelled_by(label.id);
-            }
-            if let Some(loaded) = &self.loaded {
-                match self.crop.constrained(
-                    loaded.prepared.source.image().width(),
-                    loaded.prepared.source.image().height(),
-                ) {
-                    Ok(crop) => self.crop = crop,
-                    Err(error) => self.error = Some(error.to_string()),
-                }
-            }
+            ui.small(format!(
+                "Crop zoom: {:.1}× · wheel to zoom, drag to pan",
+                self.crop.zoom
+            ));
         }
         ui.add_space(8.0);
         ui.heading("Dithering");
@@ -432,8 +415,11 @@ impl Editor {
                 egui::vec2(WIDTH as f32, HEIGHT as f32) * scale,
             ))
             .uv(uv)
-            .sense(egui::Sense::drag()),
-        );
+            .sense(egui::Sense::click_and_drag()),
+        ).on_hover_text("Wheel: crop zoom (1×–16×). Drag: pan image.\nKeyboard: Tab to frame, arrows pan, +/− zoom.");
+        if response.clicked() || response.drag_started() {
+            response.request_focus();
+        }
         ui.painter().rect_stroke(
             response.rect,
             0.0,
@@ -441,6 +427,38 @@ impl Editor {
             egui::StrokeKind::Inside,
         );
         let mut crop = self.crop;
+        if response.has_focus() {
+            ui.memory_mut(|memory| {
+                memory.set_focus_lock_filter(
+                    response.id,
+                    egui::EventFilter {
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        ..Default::default()
+                    },
+                )
+            });
+            let (dx, dy, zoom) = ui.input_mut(|input| {
+                let mut pressed = |key| {
+                    i32::from(
+                        input.consume_key(egui::Modifiers::NONE, key)
+                            || input.consume_key(egui::Modifiers::SHIFT, key),
+                    )
+                };
+                (
+                    pressed(egui::Key::ArrowRight) - pressed(egui::Key::ArrowLeft),
+                    pressed(egui::Key::ArrowDown) - pressed(egui::Key::ArrowUp),
+                    pressed(egui::Key::Plus) + pressed(egui::Key::Equals)
+                        - pressed(egui::Key::Minus),
+                )
+            });
+            crop.zoom = (crop.zoom * 1.1_f64.powi(zoom))
+                .clamp(*CROP_ZOOM_RANGE.start(), *CROP_ZOOM_RANGE.end());
+            match crop.pan(f64::from(dx) * 0.05, f64::from(dy) * 0.05, width, height) {
+                Ok(panned) => crop = panned,
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
         if response.dragged() {
             let delta = ui.input(|input| input.pointer.delta());
             match crop.pan(
@@ -686,7 +704,7 @@ mod tests {
     }
 
     #[test]
-    fn crop_sliders_support_keyboard_zoom_and_pan() {
+    fn crop_frame_supports_keyboard_zoom_and_pan_without_sliders() {
         fn frame(editor: &mut Editor, ctx: &egui::Context, events: Vec<egui::Event>) {
             let _ = ctx.run(
                 egui::RawInput {
@@ -698,12 +716,16 @@ mod tests {
                     ..Default::default()
                 },
                 |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| editor.controls(ui));
+                    egui::CentralPanel::default().show(ctx, |ui| editor.source_view(ui, 1.0));
                 },
             );
         }
         let ctx = egui::Context::default();
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.bmp");
+        std::fs::write(&input, include_bytes!("../numbers.bmp")).unwrap();
         let mut editor = Editor::default();
+        load(&mut editor, &input, &ctx);
         editor.settings.framing = Framing::Crop;
         editor.crop.zoom = 2.0;
         let key = |key| egui::Event::Key {
@@ -713,29 +735,24 @@ mod tests {
             repeat: false,
             modifiers: egui::Modifiers::NONE,
         };
-        let mut changed = [false; 3];
         frame(&mut editor, &ctx, vec![]);
-        // Tab through the actual controls rather than relying on egui's generated widget IDs.
-        let mut ids = Vec::new();
-        for _ in 0..24 {
-            frame(&mut editor, &ctx, vec![key(egui::Key::Tab)]);
-            if let Some(id) = ctx.memory(|memory| memory.focused()) {
-                ids.push(id);
-            }
-        }
-        for id in ids {
-            ctx.memory_mut(|memory| memory.request_focus(id));
-            frame(&mut editor, &ctx, vec![]);
-            let before = editor.crop;
-            frame(&mut editor, &ctx, vec![key(egui::Key::ArrowRight)]);
-            changed[0] |= editor.crop.zoom != before.zoom;
-            changed[1] |= editor.crop.center_x != before.center_x;
-            changed[2] |= editor.crop.center_y != before.center_y;
-            if changed == [true; 3] {
-                break;
-            }
-        }
-        assert_eq!(changed, [true; 3]);
+        frame(&mut editor, &ctx, vec![key(egui::Key::Tab)]);
+        frame(&mut editor, &ctx, vec![]);
+        let before = editor.crop;
+        frame(
+            &mut editor,
+            &ctx,
+            vec![
+                key(egui::Key::ArrowRight),
+                key(egui::Key::ArrowDown),
+                key(egui::Key::Plus),
+            ],
+        );
+        assert!(editor.crop.zoom > before.zoom);
+        assert!(editor.crop.center_x < before.center_x);
+        assert!(editor.crop.center_y < before.center_y);
+        frame(&mut editor, &ctx, vec![key(egui::Key::Minus)]);
+        assert!((editor.crop.zoom - before.zoom).abs() < 1e-10);
     }
 
     #[test]
