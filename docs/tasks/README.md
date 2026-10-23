@@ -22,7 +22,7 @@ Order:
 3. 003 — Command-line interface.
 4. 004 — Dithering algorithms and adjustments.
 5. 005 — Live-preview GUI.
-6. [007 — Native-only GUI overwrite confirmation](todo/007-native-overwrite-confirmation.md).
+6. [007 — Native-only GUI overwrite confirmation](done/007-native-overwrite-confirmation.md).
 7. [008 — Responsive image loading](todo/008-responsive-image-loading.md).
 8. [009 — Interactive image crop and zoom](todo/009-interactive-crop-and-zoom.md).
 9. [010 — Stack source and preview vertically](todo/010-vertical-preview-layout.md).

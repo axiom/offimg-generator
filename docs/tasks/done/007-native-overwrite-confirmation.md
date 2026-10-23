@@ -28,8 +28,8 @@ or fallback framework unless a supported backend demonstrably needs it.
 
 ## Acceptance
 
-- [ ] Native cancellation leaves existing output and the preview untouched.
-- [ ] Native approval replaces a disposable BMP with the current preview, with
+- [x] Native cancellation leaves existing output and the preview untouched.
+- [x] Native approval replaces a disposable BMP with the current preview, with
       no in-app confirmation; manually verified on KDE Wayland.
 - [x] Source paths and symlink/hardlink aliases remain rejected after approval.
 - [x] Atomic writes, failure cleanup, and CLI no-overwrite/`--force` tests pass.
@@ -59,10 +59,7 @@ and preview, rejection of source/symlink/hardlink aliases, failed loads, and
 encoder-failure preservation/temporary-file cleanup. The supplied fixtures
 and calculator files are untouched. Headless tests do not exercise native UI.
 
-Next: user runs `just gui` on KDE Wayland with a disposable output BMP. Change
-a control so the preview differs, select that existing output, and cancel the
-native save/replacement dialog: output and preview must remain unchanged.
-Repeat and approve replacement: exported pixels must match the current preview,
-with no in-app confirmation. Record results, check the first two acceptance
-items, remove the pending-manual-check note in the design, and move this task
-to `done/` only after confirmation. Then continue task 008.
+The user confirmed the overwrite-dialog behavior works as expected on their
+KDE Wayland desktop, completing the native cancellation/approval checks and
+single-prompt acceptance. Task complete; next is task 008, including the newly
+reported stalls when switching framing on large images.

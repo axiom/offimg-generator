@@ -34,10 +34,13 @@ Keep the original input and cache the resized grayscale image. Never apply
 adjustments cumulatively to a previous result. Start with processing on the
 UI thread at this small output size; measure before introducing concurrency.
 Enforce input decoder limits and retain the current image if loading fails.
-The user has since observed stalls while loading images: task 008 will move
-expensive loading/preparation off the UI thread, without assuming every cached
-400×240 tone update needs background processing. This follow-up is not yet
-implemented.
+The user has since observed stalls while loading images and switching Fit/Fill,
+especially with 4K wallpapers. Task 008 will first measure and consider a
+bounded GUI working image and/or prepared framing caches, then move remaining
+expensive loading/preparation off the UI thread. Resizing already precedes
+grayscale/dithering, but currently repeats from the full source on reframing.
+Retain the original for zoomed crops; do not assume every cached 400×240 tone
+update needs background processing. This follow-up is not yet implemented.
 
 ## Dithering and controls
 
@@ -70,7 +73,7 @@ selection directly, without a second in-app prompt. Cancellation writes
 nothing. Existing selections allow atomic replacement; new destinations retain
 no-clobber writes. Source paths and their symlink/hardlink aliases remain
 rejected even after native approval. Other Linux portals are not verified.
-Task 007's final manual KDE check is still pending.
+The user confirmed task 007's single native confirmation flow on KDE Wayland.
 
 Task 009 will add GUI-only crop editing: a fixed 400:240 frame, drag-to-pan,
 slider/wheel crop zoom, and keyboard alternatives. Keep the selection inside
@@ -83,6 +86,8 @@ not implemented; use shared crop math and preserve preview/export agreement.
 Task 010 will stack the source/crop editor above the monochrome export preview,
 rather than side by side, to better fit the landscape images within the window.
 Keep the controls sidebar, integer preview zoom, and scrolling for overflow.
+Default display magnification to 2× on startup and reset, retaining 1×/2×/3×
+choices independently of crop zoom (which resets to centered 1×).
 This layout change is planned, not implemented.
 
 ## BMP findings
